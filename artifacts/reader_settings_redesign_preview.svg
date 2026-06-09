@@ -1,0 +1,239 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1180" viewBox="0 0 1800 1180">
+  <defs>
+    <style>
+      .bg { fill: #071112; }
+      .phone { fill: #091819; stroke: #183a3c; stroke-width: 2; }
+      .panel { fill: #142b2e; stroke: #4c7478; stroke-width: 3; }
+      .card { fill: #223c40; stroke: #3a5b60; stroke-width: 2; }
+      .card2 { fill: #1b3438; stroke: #35575c; stroke-width: 2; }
+      .pill { fill: #102326; }
+      .track { fill: #4a6c70; }
+      .active { fill: #43c8bd; }
+      .thumb { fill: #a9e5df; }
+      .text { fill: #f2f5f5; font-family: "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-weight: 650; }
+      .body { fill: #dce7e8; font-family: "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-weight: 520; }
+      .muted { fill: #b6c8ca; font-family: "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-weight: 460; }
+      .tiny { fill: #9bb2b5; font-family: "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-weight: 450; }
+      .label { fill: #8ee0d8; font-family: "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-weight: 650; }
+      .note { fill: #8da3a6; font-family: "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-weight: 430; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1800" height="1180"/>
+  <text x="70" y="78" class="text" font-size="42">阅读设置面板重新设计预览</text>
+  <text x="70" y="122" class="note" font-size="22">目标：减少重复大卡片、提高空间利用率，同时保留 MD 实体面板和加减按钮。</text>
+
+  <g transform="translate(70,170)">
+    <text x="0" y="0" class="label" font-size="28">方案 A：紧凑列表（推荐）</text>
+    <text x="0" y="34" class="note" font-size="18">一张排版卡片内放 6 行设置，密度高，仍然清晰。</text>
+    <rect x="0" y="70" width="500" height="910" rx="52" class="phone"/>
+    <rect x="42" y="118" width="416" height="800" rx="34" class="panel"/>
+    <text x="76" y="180" class="text" font-size="32">阅读设置</text>
+    <circle cx="404" cy="160" r="30" fill="#365457"/>
+    <text x="393" y="172" class="body" font-size="34">×</text>
+    <text x="76" y="226" class="label" font-size="17">排版</text>
+    <rect x="66" y="246" width="368" height="370" rx="24" class="card"/>
+
+    <g transform="translate(88,284)">
+      <text x="0" y="5" class="body" font-size="18">字号</text>
+      <text x="312" y="5" class="text" font-size="20" text-anchor="end">22</text>
+      <rect x="0" y="28" width="34" height="34" rx="12" class="pill"/>
+      <text x="17" y="51" class="body" font-size="28" text-anchor="middle">−</text>
+      <rect x="54" y="42" width="210" height="8" rx="4" class="track"/>
+      <rect x="54" y="42" width="118" height="8" rx="4" class="active"/>
+      <circle cx="172" cy="46" r="16" class="thumb"/>
+      <rect x="278" y="28" width="34" height="34" rx="12" class="pill"/>
+      <text x="295" y="51" class="body" font-size="28" text-anchor="middle">+</text>
+    </g>
+    <g transform="translate(88,342)">
+      <text x="0" y="5" class="body" font-size="18">行高</text>
+      <text x="312" y="5" class="text" font-size="20" text-anchor="end">1.5</text>
+      <rect x="0" y="28" width="34" height="34" rx="12" class="pill"/>
+      <text x="17" y="51" class="body" font-size="28" text-anchor="middle">−</text>
+      <rect x="54" y="42" width="210" height="8" rx="4" class="track"/>
+      <rect x="54" y="42" width="66" height="8" rx="4" class="active"/>
+      <circle cx="120" cy="46" r="16" class="thumb"/>
+      <rect x="278" y="28" width="34" height="34" rx="12" class="pill"/>
+      <text x="295" y="51" class="body" font-size="28" text-anchor="middle">+</text>
+    </g>
+    <g transform="translate(88,400)">
+      <text x="0" y="5" class="body" font-size="18">段距</text>
+      <text x="312" y="5" class="text" font-size="20" text-anchor="end">20</text>
+      <rect x="0" y="28" width="34" height="34" rx="12" class="pill"/>
+      <text x="17" y="51" class="body" font-size="28" text-anchor="middle">−</text>
+      <rect x="54" y="42" width="210" height="8" rx="4" class="track"/>
+      <rect x="54" y="42" width="154" height="8" rx="4" class="active"/>
+      <circle cx="208" cy="46" r="16" class="thumb"/>
+      <rect x="278" y="28" width="34" height="34" rx="12" class="pill"/>
+      <text x="295" y="51" class="body" font-size="28" text-anchor="middle">+</text>
+    </g>
+    <g transform="translate(88,458)">
+      <text x="0" y="5" class="body" font-size="18">字距</text>
+      <text x="312" y="5" class="text" font-size="20" text-anchor="end">0.4</text>
+      <rect x="0" y="28" width="34" height="34" rx="12" class="pill"/>
+      <text x="17" y="51" class="body" font-size="28" text-anchor="middle">−</text>
+      <rect x="54" y="42" width="210" height="8" rx="4" class="track"/>
+      <rect x="54" y="42" width="64" height="8" rx="4" class="active"/>
+      <circle cx="118" cy="46" r="16" class="thumb"/>
+      <rect x="278" y="28" width="34" height="34" rx="12" class="pill"/>
+      <text x="295" y="51" class="body" font-size="28" text-anchor="middle">+</text>
+    </g>
+    <g transform="translate(88,516)">
+      <text x="0" y="5" class="body" font-size="18">左右边距</text>
+      <text x="312" y="5" class="text" font-size="20" text-anchor="end">28</text>
+      <rect x="0" y="28" width="34" height="34" rx="12" class="pill"/>
+      <text x="17" y="51" class="body" font-size="28" text-anchor="middle">−</text>
+      <rect x="54" y="42" width="210" height="8" rx="4" class="track"/>
+      <rect x="54" y="42" width="112" height="8" rx="4" class="active"/>
+      <circle cx="166" cy="46" r="16" class="thumb"/>
+      <rect x="278" y="28" width="34" height="34" rx="12" class="pill"/>
+      <text x="295" y="51" class="body" font-size="28" text-anchor="middle">+</text>
+    </g>
+    <g transform="translate(88,574)">
+      <text x="0" y="5" class="body" font-size="18">上下边距</text>
+      <text x="312" y="5" class="text" font-size="20" text-anchor="end">32</text>
+      <rect x="0" y="28" width="34" height="34" rx="12" class="pill"/>
+      <text x="17" y="51" class="body" font-size="28" text-anchor="middle">−</text>
+      <rect x="54" y="42" width="210" height="8" rx="4" class="track"/>
+      <rect x="54" y="42" width="82" height="8" rx="4" class="active"/>
+      <circle cx="136" cy="46" r="16" class="thumb"/>
+      <rect x="278" y="28" width="34" height="34" rx="12" class="pill"/>
+      <text x="295" y="51" class="body" font-size="28" text-anchor="middle">+</text>
+    </g>
+
+    <text x="76" y="662" class="label" font-size="17">阅读行为</text>
+    <rect x="66" y="682" width="368" height="112" rx="24" class="card2"/>
+    <text x="88" y="720" class="body" font-size="18">反转点击翻页</text>
+    <text x="88" y="752" class="muted" font-size="15">左侧上一页、右侧下一页</text>
+    <rect x="352" y="714" width="58" height="34" rx="17" fill="#587275"/>
+    <circle cx="369" cy="731" r="13" fill="#d6bec7"/>
+    <text x="76" y="838" class="label" font-size="17">阅读背景</text>
+    <rect x="76" y="858" width="70" height="36" rx="18" fill="#43c8bd"/>
+    <text x="111" y="882" class="text" font-size="15" text-anchor="middle">主题</text>
+    <rect x="154" y="858" width="58" height="36" rx="18" class="card"/>
+    <text x="183" y="882" class="muted" font-size="15" text-anchor="middle">暖色</text>
+  </g>
+
+  <g transform="translate(650,170)">
+    <text x="0" y="0" class="label" font-size="28">方案 B：双列分组</text>
+    <text x="0" y="34" class="note" font-size="18">字号/行高等常用项做成小卡片，适合快速点加减。</text>
+    <rect x="0" y="70" width="500" height="910" rx="52" class="phone"/>
+    <rect x="42" y="118" width="416" height="800" rx="34" class="panel"/>
+    <text x="76" y="180" class="text" font-size="32">阅读设置</text>
+    <circle cx="404" cy="160" r="30" fill="#365457"/>
+    <text x="393" y="172" class="body" font-size="34">×</text>
+    <text x="76" y="230" class="label" font-size="17">排版</text>
+
+    <g transform="translate(66,250)">
+      <g>
+        <rect width="176" height="128" rx="24" class="card"/>
+        <text x="20" y="34" class="muted" font-size="17">字号</text>
+        <text x="20" y="78" class="text" font-size="34">22</text>
+        <rect x="104" y="72" width="30" height="30" rx="11" class="pill"/>
+        <text x="119" y="93" class="body" font-size="24" text-anchor="middle">−</text>
+        <rect x="140" y="72" width="30" height="30" rx="11" class="pill"/>
+        <text x="155" y="93" class="body" font-size="24" text-anchor="middle">+</text>
+      </g>
+      <g transform="translate(192,0)">
+        <rect width="176" height="128" rx="24" class="card"/>
+        <text x="20" y="34" class="muted" font-size="17">行高</text>
+        <text x="20" y="78" class="text" font-size="34">1.5</text>
+        <rect x="104" y="72" width="30" height="30" rx="11" class="pill"/>
+        <text x="119" y="93" class="body" font-size="24" text-anchor="middle">−</text>
+        <rect x="140" y="72" width="30" height="30" rx="11" class="pill"/>
+        <text x="155" y="93" class="body" font-size="24" text-anchor="middle">+</text>
+      </g>
+      <g transform="translate(0,146)">
+        <rect width="176" height="128" rx="24" class="card"/>
+        <text x="20" y="34" class="muted" font-size="17">段距</text>
+        <text x="20" y="78" class="text" font-size="34">20</text>
+        <rect x="104" y="72" width="30" height="30" rx="11" class="pill"/>
+        <text x="119" y="93" class="body" font-size="24" text-anchor="middle">−</text>
+        <rect x="140" y="72" width="30" height="30" rx="11" class="pill"/>
+        <text x="155" y="93" class="body" font-size="24" text-anchor="middle">+</text>
+      </g>
+      <g transform="translate(192,146)">
+        <rect width="176" height="128" rx="24" class="card"/>
+        <text x="20" y="34" class="muted" font-size="17">字距</text>
+        <text x="20" y="78" class="text" font-size="34">0.4</text>
+        <rect x="104" y="72" width="30" height="30" rx="11" class="pill"/>
+        <text x="119" y="93" class="body" font-size="24" text-anchor="middle">−</text>
+        <rect x="140" y="72" width="30" height="30" rx="11" class="pill"/>
+        <text x="155" y="93" class="body" font-size="24" text-anchor="middle">+</text>
+      </g>
+    </g>
+
+    <text x="76" y="560" class="label" font-size="17">边距</text>
+    <rect x="66" y="580" width="368" height="150" rx="24" class="card2"/>
+    <text x="88" y="620" class="body" font-size="18">左右 28</text>
+    <rect x="180" y="613" width="180" height="8" rx="4" class="track"/>
+    <rect x="180" y="613" width="90" height="8" rx="4" class="active"/>
+    <circle cx="270" cy="617" r="14" class="thumb"/>
+    <text x="88" y="684" class="body" font-size="18">上下 32</text>
+    <rect x="180" y="677" width="180" height="8" rx="4" class="track"/>
+    <rect x="180" y="677" width="70" height="8" rx="4" class="active"/>
+    <circle cx="250" cy="681" r="14" class="thumb"/>
+
+    <rect x="66" y="758" width="368" height="86" rx="24" class="card2"/>
+    <text x="88" y="808" class="body" font-size="18">反转点击翻页</text>
+    <rect x="352" y="790" width="58" height="34" rx="17" fill="#587275"/>
+    <circle cx="369" cy="807" r="13" fill="#d6bec7"/>
+  </g>
+
+  <g transform="translate(1230,170)">
+    <text x="0" y="0" class="label" font-size="28">方案 C：顶部预设 + 底部细调</text>
+    <text x="0" y="34" class="note" font-size="18">先选阅读风格，再展开细调。更有设计感，但实现稍复杂。</text>
+    <rect x="0" y="70" width="500" height="910" rx="52" class="phone"/>
+    <rect x="42" y="118" width="416" height="800" rx="34" class="panel"/>
+    <text x="76" y="180" class="text" font-size="32">阅读设置</text>
+    <circle cx="404" cy="160" r="30" fill="#365457"/>
+    <text x="393" y="172" class="body" font-size="34">×</text>
+
+    <text x="76" y="230" class="label" font-size="17">阅读风格</text>
+    <g transform="translate(66,250)">
+      <rect width="110" height="98" rx="24" fill="#43c8bd"/>
+      <text x="55" y="46" class="text" font-size="19" text-anchor="middle">舒适</text>
+      <text x="55" y="72" fill="#eafffc" font-family="Microsoft YaHei" font-size="14" text-anchor="middle">22 / 1.5</text>
+      <rect x="124" width="110" height="98" rx="24" class="card"/>
+      <text x="179" y="46" class="body" font-size="19" text-anchor="middle">紧凑</text>
+      <text x="179" y="72" class="tiny" font-size="14" text-anchor="middle">20 / 1.35</text>
+      <rect x="248" width="110" height="98" rx="24" class="card"/>
+      <text x="303" y="46" class="body" font-size="19" text-anchor="middle">宽松</text>
+      <text x="303" y="72" class="tiny" font-size="14" text-anchor="middle">24 / 1.7</text>
+    </g>
+
+    <text x="76" y="404" class="label" font-size="17">常用微调</text>
+    <rect x="66" y="424" width="368" height="290" rx="28" class="card"/>
+    <g transform="translate(92,462)">
+      <text x="0" y="0" class="body" font-size="18">字号</text>
+      <text x="270" y="0" class="text" font-size="20" text-anchor="end">22</text>
+      <rect x="0" y="22" width="270" height="42" rx="18" class="pill"/>
+      <rect x="20" y="42" width="210" height="8" rx="4" class="track"/>
+      <rect x="20" y="42" width="118" height="8" rx="4" class="active"/>
+      <circle cx="138" cy="46" r="15" class="thumb"/>
+    </g>
+    <g transform="translate(92,548)">
+      <text x="0" y="0" class="body" font-size="18">行高</text>
+      <text x="270" y="0" class="text" font-size="20" text-anchor="end">1.5</text>
+      <rect x="0" y="22" width="270" height="42" rx="18" class="pill"/>
+      <rect x="20" y="42" width="210" height="8" rx="4" class="track"/>
+      <rect x="20" y="42" width="70" height="8" rx="4" class="active"/>
+      <circle cx="90" cy="46" r="15" class="thumb"/>
+    </g>
+    <g transform="translate(92,634)">
+      <text x="0" y="0" class="body" font-size="18">页边距</text>
+      <text x="270" y="0" class="text" font-size="20" text-anchor="end">28 / 32</text>
+      <rect x="0" y="22" width="270" height="42" rx="18" class="pill"/>
+      <rect x="20" y="42" width="210" height="8" rx="4" class="track"/>
+      <rect x="20" y="42" width="92" height="8" rx="4" class="active"/>
+      <circle cx="112" cy="46" r="15" class="thumb"/>
+    </g>
+
+    <rect x="66" y="744" width="368" height="64" rx="24" class="card2"/>
+    <text x="88" y="784" class="body" font-size="18">更多细调</text>
+    <text x="392" y="784" class="body" font-size="26" text-anchor="middle">›</text>
+    <rect x="66" y="830" width="368" height="64" rx="24" class="card2"/>
+    <text x="88" y="870" class="body" font-size="18">阅读背景</text>
+    <text x="392" y="870" class="muted" font-size="15" text-anchor="end">跟随主题</text>
+  </g>
+</svg>

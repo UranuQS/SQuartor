@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SQuartor Design Preview</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #120b10;
+      --surface: #1e1118;
+      --card: #2b1821;
+      --card-2: #351b27;
+      --line: #553141;
+      --primary: #b00046;
+      --primary-soft: #ff9fbd;
+      --text: #f8edf2;
+      --muted: #c9b8c0;
+      --subtle: #8e7c85;
+      --reader-bg: #17100d;
+      --reader-text: #eadfd8;
+      --shadow: rgba(0, 0, 0, .35);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 20%, transparent), transparent 34rem),
+        #070609;
+      color: var(--text);
+      font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      display: grid;
+      grid-template-columns: minmax(300px, 420px) 1fr;
+      gap: 28px;
+      padding: 28px;
+    }
+
+    .panel {
+      align-self: start;
+      position: sticky;
+      top: 28px;
+      background: color-mix(in srgb, var(--surface) 88%, black);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      padding: 24px;
+      box-shadow: 0 24px 80px var(--shadow);
+    }
+
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 34px; letter-spacing: -.04em; }
+    h2 { font-size: 19px; margin-top: 26px; margin-bottom: 12px; color: var(--muted); }
+    p { color: var(--muted); line-height: 1.7; margin-top: 12px; }
+
+    .controls { display: grid; gap: 10px; }
+    .segmented { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    button {
+      border: 0;
+      color: var(--text);
+      background: var(--card);
+      border-radius: 999px;
+      padding: 11px 15px;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    button.active {
+      background: var(--primary);
+      color: white;
+      box-shadow: 0 8px 28px color-mix(in srgb, var(--primary) 38%, transparent);
+    }
+
+    .swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .swatch {
+      height: 54px;
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, .12);
+      display: grid;
+      place-items: center;
+      font-size: 13px;
+      color: white;
+    }
+
+    .preview-wrap {
+      display: grid;
+      place-items: center;
+      min-height: calc(100vh - 56px);
+    }
+
+    .phone {
+      width: min(420px, 100%);
+      height: 880px;
+      max-height: calc(100vh - 56px);
+      background: var(--bg);
+      border: 1px solid color-mix(in srgb, var(--line) 70%, white 4%);
+      border-radius: 42px;
+      overflow: hidden;
+      box-shadow: 0 34px 120px rgba(0, 0, 0, .55);
+      position: relative;
+    }
+
+    .status {
+      height: 54px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      color: var(--text);
+      font-weight: 700;
+      opacity: .95;
+    }
+
+    .screen {
+      display: none;
+      height: calc(100% - 54px);
+      overflow: hidden;
+    }
+    .screen.active { display: block; }
+
+    .content {
+      height: calc(100% - 88px);
+      overflow: auto;
+      padding: 28px 22px 22px;
+      scrollbar-width: none;
+    }
+    .content::-webkit-scrollbar { display: none; }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 34px;
+    }
+
+    .title { font-size: 34px; font-weight: 800; letter-spacing: -.05em; }
+    .icons { display: flex; gap: 12px; color: var(--muted); font-size: 25px; }
+
+    .tabs { display: flex; gap: 20px; margin: 0 -22px 24px; padding: 0 22px 12px; border-bottom: 1px solid var(--line); }
+    .tab { color: var(--muted); font-weight: 800; font-size: 17px; padding-bottom: 10px; }
+    .tab.on { color: var(--primary-soft); box-shadow: inset 0 -5px 0 var(--primary-soft); }
+
+    .section-title { display: flex; align-items: center; gap: 12px; font-size: 24px; font-weight: 800; margin-bottom: 18px; }
+
+    .book {
+      display: grid;
+      grid-template-columns: 106px 1fr;
+      gap: 16px;
+      margin-bottom: 28px;
+      align-items: start;
+    }
+
+    .cover {
+      height: 148px;
+      border-radius: 16px;
+      background:
+        linear-gradient(135deg, rgba(255, 255, 255, .92), rgba(255, 255, 255, .15)),
+        linear-gradient(155deg, var(--primary-soft), var(--primary), #ffcf72);
+      box-shadow: 0 14px 36px var(--shadow);
+      overflow: hidden;
+      position: relative;
+    }
+    .cover::after {
+      content: "LN";
+      position: absolute;
+      right: 10px;
+      bottom: 8px;
+      font-size: 34px;
+      color: rgba(0, 0, 0, .35);
+      font-weight: 900;
+    }
+
+    .book h3 { font-size: 20px; line-height: 1.35; margin-top: 8px; }
+    .author { color: #acd5ff; font-weight: 700; margin-top: 12px; }
+    .meta { display: flex; gap: 10px; flex-wrap: wrap; color: var(--muted); margin-top: 10px; }
+    .meta span { background: color-mix(in srgb, var(--card) 70%, black); padding: 5px 8px; border-radius: 9px; }
+    .summary { color: var(--muted); line-height: 1.55; margin-top: 8px; }
+
+    .bottom-nav {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 88px;
+      background: color-mix(in srgb, var(--surface) 88%, black);
+      border-top: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      padding: 8px 14px 12px;
+    }
+    .nav-item { display: grid; place-items: center; gap: 4px; color: var(--muted); font-weight: 700; }
+    .nav-icon { font-size: 25px; width: 62px; height: 38px; display: grid; place-items: center; border-radius: 999px; }
+    .nav-item.on .nav-icon { background: color-mix(in srgb, var(--primary) 70%, var(--card)); color: white; }
+    .nav-item.on { color: var(--text); }
+
+    .empty-card, .setting-card, .toc-card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 20px;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, .2);
+    }
+
+    .import-btn {
+      margin-top: 18px;
+      display: inline-flex;
+      background: var(--primary);
+      color: white;
+      padding: 14px 18px;
+      border-radius: 18px;
+      font-weight: 800;
+    }
+
+    .reader {
+      background: var(--reader-bg);
+      color: var(--reader-text);
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+    .reader-menu {
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      color: color-mix(in srgb, var(--reader-text) 78%, transparent);
+      background: color-mix(in srgb, var(--reader-bg) 85%, black);
+      border-bottom: 1px solid color-mix(in srgb, var(--reader-text) 16%, transparent);
+    }
+    .reader-body {
+      flex: 1;
+      padding: 34px 28px;
+      font-size: 20px;
+      line-height: 1.86;
+      letter-spacing: .04em;
+      overflow: hidden;
+    }
+    .reader-body h3 { font-size: 22px; margin-bottom: 24px; color: var(--reader-text); }
+    .reader-body p { color: var(--reader-text); margin: 0 0 1.2em; }
+    .reader-bottom {
+      height: 84px;
+      padding: 12px 20px;
+      background: color-mix(in srgb, var(--reader-bg) 84%, black);
+      border-top: 1px solid color-mix(in srgb, var(--reader-text) 16%, transparent);
+    }
+    .progress { height: 6px; border-radius: 99px; background: rgba(255, 255, 255, .16); overflow: hidden; margin-bottom: 12px; }
+    .progress span { display: block; height: 100%; width: 42%; background: var(--primary-soft); }
+    .reader-actions { display: flex; justify-content: space-between; color: color-mix(in srgb, var(--reader-text) 76%, transparent); }
+
+    .toc-card { display: grid; gap: 12px; }
+    .chapter {
+      padding: 14px 14px;
+      border-radius: 16px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .chapter.on { background: color-mix(in srgb, var(--primary) 34%, var(--card)); color: var(--text); }
+
+    .setting-card { display: grid; gap: 18px; }
+    .row { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+    .range { height: 8px; flex: 1; border-radius: 999px; background: rgba(255, 255, 255, .14); position: relative; }
+    .range::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 58%; background: var(--primary-soft); border-radius: inherit; }
+    .pill-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+    .pill { padding: 11px 14px; background: color-mix(in srgb, var(--card-2) 70%, black); border-radius: 999px; color: var(--muted); }
+    .pill.on { background: var(--primary); color: white; }
+
+    @media (max-width: 900px) {
+      body { grid-template-columns: 1fr; padding: 16px; }
+      .panel { position: static; }
+      .phone { height: 820px; }
+    }
+  </style>
+</head>
+<body>
+  <aside class="panel">
+    <h1>SQuartor</h1>
+    <p>主题色控制整个应用界面；阅读背景独立选择，适合长时间看中文轻小说。</p>
+
+    <h2>页面</h2>
+    <div class="segmented" id="screenButtons">
+      <button class="active" data-screen="shelf">书架</button>
+      <button data-screen="reader">阅读</button>
+      <button data-screen="toc">目录</button>
+      <button data-screen="settings">设置</button>
+    </div>
+
+    <h2>应用主题色</h2>
+    <div class="swatches" id="themeButtons">
+      <button class="swatch active" data-theme="wine" style="background:#9d003e">酒红</button>
+      <button class="swatch" data-theme="blue" style="background:#244d75">深蓝</button>
+      <button class="swatch" data-theme="green" style="background:#23614c">墨绿</button>
+      <button class="swatch" data-theme="brown" style="background:#71432d">暖棕</button>
+      <button class="swatch" data-theme="purple" style="background:#5b3f86">紫黑</button>
+      <button class="swatch" data-theme="black" style="background:#24262b">纯黑</button>
+    </div>
+
+    <h2>独立阅读背景</h2>
+    <div class="segmented" id="readerButtons">
+      <button class="active" data-reader="warm">暖棕</button>
+      <button data-reader="black">黑色</button>
+      <button data-reader="paper">米白</button>
+      <button data-reader="green">护眼</button>
+    </div>
+  </aside>
+
+  <main class="preview-wrap">
+    <div class="phone">
+      <div class="status"><span>01:03</span><span>5G 30</span></div>
+
+      <section class="screen active" data-view="shelf">
+        <div class="content">
+          <div class="topbar">
+            <div class="title">书架</div>
+            <div class="icons"><span>＋</span><span>⋮</span></div>
+          </div>
+          <div class="tabs"><div class="tab on">已收藏</div><div class="tab">最近阅读</div></div>
+          <div class="section-title">▱ 全部 (8)</div>
+          <article class="book">
+            <div class="cover"></div>
+            <div>
+              <h3>不起眼女主角培育法</h3>
+              <div class="author">丸户史明</div>
+              <div class="meta"><span>EPUB</span><span>42%</span><span>上次 23:18</span></div>
+              <div class="summary">我要将你栽培成令人心动得小鹿乱撞的第一女主角。</div>
+            </div>
+          </article>
+          <article class="book">
+            <div class="cover" style="background:linear-gradient(155deg,#9edcff,#ff9fbd,#fff0a8)"></div>
+            <div>
+              <h3>我们不可能成为恋人！绝对不行。</h3>
+              <div class="author">みかみてれん</div>
+              <div class="meta"><span>TXT</span><span>18%</span><span>133W 字</span></div>
+              <div class="summary">我再也不要孤单一人了！我要赢得最棒的校园生活。</div>
+            </div>
+          </article>
+        </div>
+        <nav class="bottom-nav">
+          <div class="nav-item on"><div class="nav-icon">▣</div><div>书架</div></div>
+          <div class="nav-item"><div class="nav-icon">▤</div><div>目录</div></div>
+          <div class="nav-item"><div class="nav-icon">◇</div><div>阅读</div></div>
+          <div class="nav-item"><div class="nav-icon">⚙</div><div>设置</div></div>
+        </nav>
+      </section>
+
+      <section class="screen" data-view="reader">
+        <div class="reader">
+          <div class="reader-menu"><span>‹ 书架</span><strong>第二章</strong><span>☰  Aa</span></div>
+          <div class="reader-body">
+            <h3>第二章 交错的社团活动</h3>
+            <p>午后的教室被柔和的光填满。窗外传来运动社团的喊声，像是把夏天切成一页一页。</p>
+            <p>她坐在靠窗的位置，翻着那本封面已经有些磨损的轻小说，语气平静得像是在说别人的故事。</p>
+            <p>我想，如果能把这段时间好好记录下来，也许终有一天会成为我们共同喜欢的章节。</p>
+          </div>
+          <div class="reader-bottom">
+            <div class="progress"><span></span></div>
+            <div class="reader-actions"><span>42%</span><span>目录</span><span>设置</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" data-view="toc">
+        <div class="content">
+          <div class="topbar"><div class="title">目录</div><div class="icons"><span>×</span></div></div>
+          <div class="toc-card">
+            <div class="chapter"><span>序章</span><span>0%</span></div>
+            <div class="chapter"><span>第一章 平凡的一天</span><span>12%</span></div>
+            <div class="chapter on"><span>第二章 交错的社团活动</span><span>42%</span></div>
+            <div class="chapter"><span>第三章 插图之后</span><span>58%</span></div>
+            <div class="chapter"><span>终章</span><span>91%</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="screen" data-view="settings">
+        <div class="content">
+          <div class="topbar"><div class="title">阅读设置</div><div class="icons"><span>✓</span></div></div>
+          <div class="setting-card">
+            <div class="row"><strong>字体</strong><span>霞鹜文楷</span></div>
+            <div class="row"><strong>字号</strong><div class="range"></div><span>20</span></div>
+            <div class="row"><strong>行高</strong><div class="range"></div><span>1.8</span></div>
+            <div class="row"><strong>段距</strong><div class="range"></div><span>12</span></div>
+            <div class="row"><strong>字距</strong><div class="range"></div><span>0.4</span></div>
+            <div>
+              <strong>阅读背景</strong>
+              <div class="pill-grid" style="margin-top:12px">
+                <div class="pill on">暖棕</div><div class="pill">黑色</div><div class="pill">米白</div><div class="pill">护眼</div>
+              </div>
+            </div>
+            <div class="import-btn">导入字体 .ttf / .otf</div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const themes = {
+      wine: ['#120b10', '#1e1118', '#2b1821', '#553141', '#b00046', '#ff9fbd'],
+      blue: ['#0a1017', '#111b25', '#172838', '#32495f', '#2f6fa8', '#a9d5ff'],
+      green: ['#08120f', '#101d18', '#172a22', '#315748', '#2e7d5f', '#a7e6ce'],
+      brown: ['#150d09', '#22150f', '#321f16', '#5c4032', '#9b522f', '#ffc49f'],
+      purple: ['#100d18', '#191426', '#261c38', '#4d3d68', '#7d4cc2', '#d1b2ff'],
+      black: ['#090a0d', '#111318', '#1a1d23', '#383d46', '#5b6472', '#d5dde9'],
+    };
+    const readers = {
+      warm: ['#17100d', '#eadfd8'],
+      black: ['#050506', '#dedede'],
+      paper: ['#f2e5cf', '#30241b'],
+      green: ['#dfead9', '#223026'],
+    };
+
+    function setVars(values) {
+      const keys = ['--bg', '--surface', '--card', '--line', '--primary', '--primary-soft'];
+      keys.forEach((key, index) => document.documentElement.style.setProperty(key, values[index]));
+    }
+
+    function setReader(values) {
+      document.documentElement.style.setProperty('--reader-bg', values[0]);
+      document.documentElement.style.setProperty('--reader-text', values[1]);
+    }
+
+    document.querySelectorAll('[data-screen]').forEach(button => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('[data-screen]').forEach(item => item.classList.remove('active'));
+        document.querySelectorAll('[data-view]').forEach(item => item.classList.remove('active'));
+        button.classList.add('active');
+        document.querySelector(`[data-view="${button.dataset.screen}"]`).classList.add('active');
+      });
+    });
+
+    document.querySelectorAll('[data-theme]').forEach(button => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('[data-theme]').forEach(item => item.classList.remove('active'));
+        button.classList.add('active');
+        setVars(themes[button.dataset.theme]);
+      });
+    });
+
+    document.querySelectorAll('[data-reader]').forEach(button => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('[data-reader]').forEach(item => item.classList.remove('active'));
+        button.classList.add('active');
+        setReader(readers[button.dataset.reader]);
+      });
+    });
+  </script>
+</body>
+</html>

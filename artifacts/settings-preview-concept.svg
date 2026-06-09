@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="768" height="1368" viewBox="0 0 768 1368">
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+    <style>
+      .bg { fill: #071716; }
+      .reader { fill: #edf1ef; font-family: "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-size: 34px; font-weight: 500; opacity: .34; }
+      .readerTitle { fill: #f4f7f5; font-family: "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-size: 56px; font-weight: 800; opacity: .32; }
+      .panel { fill: #132829; stroke: #477273; stroke-width: 2; }
+      .card { fill: #294245; stroke: #3e6264; stroke-width: 1.5; }
+      .pill { fill: #0d2122; }
+      .accent { fill: #42cdc2; }
+      .accentStroke { stroke: #42cdc2; }
+      .mutedStroke { stroke: #43686a; }
+      .text { fill: #f1f4f2; font-family: "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-weight: 700; }
+      .muted { fill: #a8b7b8; font-family: "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-weight: 600; }
+      .label { fill: #d9e0df; font-family: "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-weight: 700; }
+      .small { font-size: 18px; }
+      .mid { font-size: 24px; }
+      .head { font-size: 42px; }
+      .tip { fill: #071716; stroke: #42cdc2; stroke-width: 2; }
+      .tipText { fill: #d9fffb; font-family: "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; font-size: 20px; font-weight: 700; }
+      .arrow { fill: none; stroke: #42cdc2; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="768" height="1368" rx="24"/>
+
+  <g opacity="1">
+    <text class="readerTitle" x="54" y="150">正文预览</text>
+    <text class="reader" x="86" y="250">字体变大后，阅读页会先在后台重新</text>
+    <text class="reader" x="54" y="314">排版，再截成一张新的静态预览图。</text>
+    <text class="reader" x="86" y="410">所以你拖动字号、边距时，能看到</text>
+    <text class="reader" x="54" y="474">背后的阅读效果跟着变化。</text>
+    <text class="reader" x="86" y="580">但设置面板本身仍然是实色 MD 面板，</text>
+    <text class="reader" x="54" y="644">不用让真实 WebView 每帧参与合成。</text>
+    <text class="reader" x="86" y="750">这样真机上滚动设置、目录时更稳。</text>
+  </g>
+
+  <rect x="28" y="92" width="712" height="1188" rx="38" fill="#000000" opacity=".18"/>
+
+  <g filter="url(#shadow)">
+    <rect class="panel" x="38" y="94" width="692" height="1212" rx="34"/>
+    <text class="text head" x="72" y="165">阅读设置</text>
+    <text class="muted mid" x="72" y="207">改完设置后，背后预览图自动刷新</text>
+    <circle cx="670" cy="155" r="34" fill="#2d4448"/>
+    <path d="M657 142 L683 168 M683 142 L657 168" stroke="#edf1f1" stroke-width="4" stroke-linecap="round"/>
+
+    <text class="muted mid" x="72" y="276">常用微调</text>
+    <rect class="card" x="58" y="306" width="652" height="470" rx="28"/>
+
+    <g transform="translate(82,348)">
+      <text class="muted mid" x="0" y="0">字号</text>
+      <text class="text mid" x="548" y="0" text-anchor="end">22</text>
+      <rect class="pill" x="0" y="22" width="54" height="54" rx="16"/>
+      <text class="text head" x="27" y="63" text-anchor="middle">−</text>
+      <line class="mutedStroke" x1="82" y1="49" x2="490" y2="49" stroke-width="8" stroke-linecap="round"/>
+      <line class="accentStroke" x1="82" y1="49" x2="280" y2="49" stroke-width="8" stroke-linecap="round"/>
+      <circle class="accent" cx="280" cy="49" r="14"/>
+      <rect class="pill" x="512" y="22" width="54" height="54" rx="16"/>
+      <text class="text head" x="539" y="63" text-anchor="middle">+</text>
+    </g>
+
+    <g transform="translate(82,470)">
+      <text class="muted mid" x="0" y="0">行高</text>
+      <text class="text mid" x="548" y="0" text-anchor="end">1.50</text>
+      <rect class="pill" x="0" y="22" width="54" height="54" rx="16"/>
+      <text class="text head" x="27" y="63" text-anchor="middle">−</text>
+      <line class="mutedStroke" x1="82" y1="49" x2="490" y2="49" stroke-width="8" stroke-linecap="round"/>
+      <line class="accentStroke" x1="82" y1="49" x2="220" y2="49" stroke-width="8" stroke-linecap="round"/>
+      <circle fill="#a5e8e3" cx="220" cy="49" r="14"/>
+      <rect class="pill" x="512" y="22" width="54" height="54" rx="16"/>
+      <text class="text head" x="539" y="63" text-anchor="middle">+</text>
+    </g>
+
+    <g transform="translate(82,592)">
+      <text class="muted mid" x="0" y="0">左右边距</text>
+      <text class="text mid" x="548" y="0" text-anchor="end">28</text>
+      <rect class="pill" x="0" y="22" width="54" height="54" rx="16"/>
+      <text class="text head" x="27" y="63" text-anchor="middle">−</text>
+      <line class="mutedStroke" x1="82" y1="49" x2="490" y2="49" stroke-width="8" stroke-linecap="round"/>
+      <line class="accentStroke" x1="82" y1="49" x2="265" y2="49" stroke-width="8" stroke-linecap="round"/>
+      <circle fill="#a5e8e3" cx="265" cy="49" r="14"/>
+      <rect class="pill" x="512" y="22" width="54" height="54" rx="16"/>
+      <text class="text head" x="539" y="63" text-anchor="middle">+</text>
+    </g>
+
+    <g transform="translate(82,714)">
+      <text class="muted mid" x="0" y="0">上下边距</text>
+      <text class="text mid" x="548" y="0" text-anchor="end">32</text>
+      <rect class="pill" x="0" y="22" width="54" height="54" rx="16"/>
+      <text class="text head" x="27" y="63" text-anchor="middle">−</text>
+      <line class="mutedStroke" x1="82" y1="49" x2="490" y2="49" stroke-width="8" stroke-linecap="round"/>
+      <line class="accentStroke" x1="82" y1="49" x2="235" y2="49" stroke-width="8" stroke-linecap="round"/>
+      <circle fill="#a5e8e3" cx="235" cy="49" r="14"/>
+      <rect class="pill" x="512" y="22" width="54" height="54" rx="16"/>
+      <text class="text head" x="539" y="63" text-anchor="middle">+</text>
+    </g>
+
+    <text class="muted mid" x="72" y="850">阅读背景</text>
+    <rect class="card" x="58" y="880" width="652" height="86" rx="26"/>
+    <rect class="accent" x="88" y="904" width="132" height="40" rx="20"/>
+    <text class="label mid" x="154" y="932" text-anchor="middle">跟随主题</text>
+    <text class="muted mid" x="282" y="932" text-anchor="middle">暖棕</text>
+    <text class="muted mid" x="394" y="932" text-anchor="middle">黑色</text>
+    <text class="muted mid" x="506" y="932" text-anchor="middle">米白</text>
+    <text class="muted mid" x="618" y="932" text-anchor="middle">护眼</text>
+
+    <rect class="tip" x="72" y="1015" width="624" height="118" rx="24"/>
+    <text class="tipText" x="96" y="1062">拖动滑块 → 后台重新排版 → 刷新背景预览图</text>
+    <text class="tipText" x="96" y="1098">面板仍是实色，所以滚动设置时更省性能</text>
+  </g>
+
+  <path class="arrow" d="M625 1015 C700 920 704 760 672 638"/>
+  <path class="arrow" d="M672 638 L651 674 M672 638 L697 672"/>
+</svg>
