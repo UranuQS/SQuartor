@@ -173,6 +173,9 @@ class _FlowBuilder {
       return;
     }
     if (tag == 'img' || tag == 'svg') {
+      if (_isAnnotationMarkerMedia(node)) {
+        return;
+      }
       _addMediaBlock(node);
       return;
     }
@@ -252,6 +255,9 @@ class _FlowBuilder {
     }
     if (hasMedia && text.isEmpty) {
       for (final media in source.querySelectorAll('img, svg')) {
+        if (_isAnnotationMarkerMedia(media)) {
+          continue;
+        }
         _addMediaBlock(media);
       }
       return;
@@ -294,6 +300,9 @@ class _FlowBuilder {
       return '';
     }
     if (tag == 'img' || tag == 'svg') {
+      if (_isAnnotationMarkerMedia(node)) {
+        return '';
+      }
       return _mediaHtml(node);
     }
     if (tag == 'br') {
@@ -393,6 +402,69 @@ class _FlowBuilder {
       attributes.add('name="${_attributeEscape.convert(name)}"');
     }
     return attributes.isEmpty ? '' : ' ${attributes.join(' ')}';
+  }
+
+  bool _isAnnotationMarkerMedia(dom.Element element) {
+    final tag = element.localName?.toLowerCase() ?? '';
+    if (tag != 'img' && tag != 'svg') {
+      return false;
+    }
+    final source = [
+      element.attributes['src'],
+      element.attributes['alt'],
+      element.attributes['title'],
+      element.attributes['class'],
+      element.attributes['id'],
+      element.attributes['href'],
+      element.attributes['xlink:href'],
+    ].whereType<String>().join(' ').toLowerCase();
+    final parentText = [
+      element.parent?.attributes['class'],
+      element.parent?.attributes['id'],
+      element.parent?.attributes['epub:type'],
+      element.parent?.attributes['type'],
+      element.parent?.attributes['role'],
+    ].whereType<String>().join(' ').toLowerCase();
+    final markerText = '$source $parentText';
+    final looksLikeNote =
+        RegExp(
+          r'(footnote|noteref|note|annotation|marker|kobo|duokan|kindle)',
+        ).hasMatch(markerText) ||
+        markerText.contains('注') ||
+        markerText.contains('脚') ||
+        markerText.contains('註');
+    if (!looksLikeNote) {
+      return false;
+    }
+    final width = _numericAttribute(element, 'width');
+    final height = _numericAttribute(element, 'height');
+    final style = element.attributes['style'] ?? '';
+    final styleWidth = _stylePixelValue(style, 'width');
+    final styleHeight = _stylePixelValue(style, 'height');
+    final effectiveWidth = width ?? styleWidth;
+    final effectiveHeight = height ?? styleHeight;
+    if (effectiveWidth == null || effectiveHeight == null) {
+      return false;
+    }
+    return effectiveWidth <= 96 && effectiveHeight <= 96;
+  }
+
+  double? _numericAttribute(dom.Element element, String name) {
+    final value = element.attributes[name];
+    if (value == null) {
+      return null;
+    }
+    return double.tryParse(
+      RegExp(r'[-+]?\d*\.?\d+').firstMatch(value)?.group(0) ?? '',
+    );
+  }
+
+  double? _stylePixelValue(String style, String name) {
+    final match = RegExp(
+      '$name\\s*:\\s*([-+]?\\d*\\.?\\d+)\\s*px',
+      caseSensitive: false,
+    ).firstMatch(style);
+    return double.tryParse(match?.group(1) ?? '');
   }
 }
 

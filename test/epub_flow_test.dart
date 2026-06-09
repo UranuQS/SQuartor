@@ -65,4 +65,24 @@ void main() {
     expect(flow.blocks.single, contains('<img'));
     expect(flow.blocks.single, isNot(contains('<svg')));
   });
+
+  test('ignores tiny note marker images', () {
+    final flow = normalizeEpubFlow(
+      '''
+      <html><body>
+        <p>正文<a epub:type="noteref" href="#note-1">
+          <img class="footnote-marker" src="../image/note.png" width="24" height="24" alt="注" />
+        </a>继续。</p>
+        <p><img src="../image/insert.jpg" width="800" height="1200" alt="插图" /></p>
+      </body></html>
+      ''',
+      resolveLink: sameHref,
+      resolveResource: (href) => 'resource:$href',
+    );
+
+    final html = flow.blocks.join();
+    expect(html, isNot(contains('note.png')));
+    expect(html, contains('insert.jpg'));
+    expect(flow.mediaCount, 1);
+  });
 }

@@ -27,7 +27,7 @@ class BookRepository {
   static const _readingStatsKey = 'reading_stats.v1';
   static const _shelvesKey = 'shelves.v1';
   static const _androidPickerChannel = MethodChannel('squartor/native_picker');
-  static const _epubReaderVersion = '4';
+  static const _epubReaderVersion = '5';
   static const _epubReaderVersionFile = '.flow-version';
   static const _txtReaderVersion = '4';
   static const _txtReaderVersionFile = '.txt-flow-version';
@@ -747,7 +747,7 @@ class BookRepository {
     required Map<String, _ReaderChapterGroup> groupBySourceHref,
   }) {
     final uri = Uri.tryParse(href);
-    if (uri == null || uri.hasScheme) {
+    if (uri != null && uri.hasScheme) {
       return href;
     }
     if (href.startsWith('#')) {
@@ -756,7 +756,7 @@ class BookRepository {
         return href;
       }
       return group.outputFile.uri
-          .replace(fragment: Uri.decodeComponent(href.substring(1)))
+          .replace(fragment: _decodeLooseFragment(href.substring(1)))
           .toString();
     }
     final resolved = _splitEpubHref(
@@ -778,8 +778,11 @@ class BookRepository {
     required String sourceHref,
     required Directory extractDir,
   }) {
+    if (href.startsWith('data:')) {
+      return href;
+    }
     final uri = Uri.tryParse(href);
-    if (uri == null || uri.hasScheme || href.startsWith('data:')) {
+    if (uri != null && uri.hasScheme) {
       return href;
     }
     final resolved = _splitEpubHref(
@@ -1300,7 +1303,10 @@ class BookRepository {
   }
 
   String _normalizeEpubHref(String href) {
-    final decoded = Uri.decodeFull(href).replaceAll('\\', '/');
+    final decoded = _decodeLooseUriComponent(
+      href,
+      full: true,
+    ).replaceAll('\\', '/');
     return path.posix.normalize(decoded).replaceFirst(RegExp(r'^\./'), '');
   }
 
@@ -1320,9 +1326,25 @@ class BookRepository {
     return _EpubHrefParts(
       path: _normalizeEpubHref(parts.first),
       fragment: parts.length > 1
-          ? Uri.decodeComponent(parts.skip(1).join('#'))
+          ? _decodeLooseFragment(parts.skip(1).join('#'))
           : null,
     );
+  }
+
+  String _decodeLooseFragment(String value) {
+    return _decodeLooseUriComponent(value, full: false);
+  }
+
+  String _decodeLooseUriComponent(String value, {required bool full}) {
+    try {
+      return full ? Uri.decodeFull(value) : Uri.decodeComponent(value);
+    } on FormatException {
+      final repaired = value.replaceAllMapped(
+        RegExp(r'%(?![0-9A-Fa-f]{2})'),
+        (_) => '%25',
+      );
+      return full ? Uri.decodeFull(repaired) : Uri.decodeComponent(repaired);
+    }
   }
 
   bool _isReadableDocument(String mediaType) {

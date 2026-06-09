@@ -18,6 +18,16 @@ import '../typography.dart';
 
 enum _ReaderOverlay { hidden, chrome, toc, settings }
 
+String _decodeLooseUriComponent(String value) {
+  try {
+    return Uri.decodeComponent(value);
+  } on FormatException {
+    return Uri.decodeComponent(
+      value.replaceAllMapped(RegExp(r'%(?![0-9A-Fa-f]{2})'), (_) => '%25'),
+    );
+  }
+}
+
 class _ReaderGlassPalette {
   const _ReaderGlassPalette({
     required this.dark,
@@ -289,7 +299,7 @@ class _ReaderScreenState extends State<ReaderScreen>
                             onLoadStop: (controller, url) async {
                               _syncChapterFromUrl(url);
                               if (url?.fragment.isNotEmpty == true) {
-                                _pendingAnchor = Uri.decodeComponent(
+                                _pendingAnchor = _decodeLooseUriComponent(
                                   url!.fragment,
                                 );
                               }
@@ -1007,17 +1017,75 @@ class _ReaderScreenState extends State<ReaderScreen>
     final result = <String>[];
     if (element.localName?.toLowerCase() == 'img') {
       final source = element.attributes['src'];
-      if (source != null && source.isNotEmpty) {
+      if (source != null &&
+          source.isNotEmpty &&
+          !_isTinyAnnotationImage(element)) {
         result.add(source);
       }
     }
     for (final image in element.querySelectorAll('img')) {
       final source = image.attributes['src'];
-      if (source != null && source.isNotEmpty) {
+      if (source != null &&
+          source.isNotEmpty &&
+          !_isTinyAnnotationImage(image)) {
         result.add(source);
       }
     }
     return result.toSet().toList(growable: false);
+  }
+
+  bool _isTinyAnnotationImage(dom.Element element) {
+    final markerText = [
+      element.attributes['src'],
+      element.attributes['alt'],
+      element.attributes['title'],
+      element.attributes['class'],
+      element.attributes['id'],
+      element.parent?.attributes['class'],
+      element.parent?.attributes['id'],
+      element.parent?.attributes['epub:type'],
+      element.parent?.attributes['type'],
+      element.parent?.attributes['role'],
+    ].whereType<String>().join(' ').toLowerCase();
+    final looksLikeNote =
+        RegExp(
+          r'(footnote|noteref|note|annotation|marker|kobo|duokan|kindle)',
+        ).hasMatch(markerText) ||
+        markerText.contains('注') ||
+        markerText.contains('脚') ||
+        markerText.contains('註');
+    if (!looksLikeNote) {
+      return false;
+    }
+    final width = _numericHtmlDimension(element, 'width');
+    final height = _numericHtmlDimension(element, 'height');
+    final style = element.attributes['style'] ?? '';
+    final styleWidth = _stylePixelDimension(style, 'width');
+    final styleHeight = _stylePixelDimension(style, 'height');
+    final effectiveWidth = width ?? styleWidth;
+    final effectiveHeight = height ?? styleHeight;
+    if (effectiveWidth == null || effectiveHeight == null) {
+      return false;
+    }
+    return effectiveWidth <= 96 && effectiveHeight <= 96;
+  }
+
+  double? _numericHtmlDimension(dom.Element element, String name) {
+    final value = element.attributes[name];
+    if (value == null) {
+      return null;
+    }
+    return double.tryParse(
+      RegExp(r'[-+]?\d*\.?\d+').firstMatch(value)?.group(0) ?? '',
+    );
+  }
+
+  double? _stylePixelDimension(String style, String name) {
+    final match = RegExp(
+      '$name\\s*:\\s*([-+]?\\d*\\.?\\d+)\\s*px',
+      caseSensitive: false,
+    ).firstMatch(style);
+    return double.tryParse(match?.group(1) ?? '');
   }
 
   bool _shouldFallbackForComplexEpubContent(
@@ -2207,7 +2275,7 @@ class _ReaderScreenState extends State<ReaderScreen>
     }
     final anchor = uri.fragment.isEmpty
         ? null
-        : Uri.decodeComponent(uri.fragment);
+        : _decodeLooseUriComponent(uri.fragment);
     if (index == _chapterIndex) {
       if (anchor != null) {
         if (_usesFlutterTxt) {
