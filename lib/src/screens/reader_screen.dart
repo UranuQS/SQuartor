@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -3241,20 +3242,21 @@ class _FullscreenImageViewer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final uri = Uri.tryParse(source);
-    final image = uri?.scheme == 'file'
-        ? Image.file(File(uri!.toFilePath()), fit: BoxFit.contain)
-        : Image.network(source, fit: BoxFit.contain);
+    final image = _readerImageForSource(source);
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
         child: Stack(
           children: [
             Positioned.fill(
-              child: InteractiveViewer(
-                minScale: .8,
-                maxScale: 6,
-                child: Center(child: image),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onLongPress: () => _saveReaderImage(context, source),
+                child: InteractiveViewer(
+                  minScale: .8,
+                  maxScale: 6,
+                  child: Center(child: image),
+                ),
               ),
             ),
             Positioned(
@@ -3270,6 +3272,114 @@ class _FullscreenImageViewer extends StatelessWidget {
       ),
     );
   }
+}
+
+Widget _readerImageForSource(String source) {
+  final uri = Uri.tryParse(source);
+  if (uri?.scheme == 'file') {
+    return Image.file(File(uri!.toFilePath()), fit: BoxFit.contain);
+  }
+  if (uri?.scheme == 'data') {
+    final comma = source.indexOf(',');
+    if (comma > 0 && source.substring(0, comma).contains(';base64')) {
+      try {
+        return Image.memory(
+          base64Decode(source.substring(comma + 1)),
+          fit: BoxFit.contain,
+        );
+      } catch (_) {
+        return const Icon(Icons.broken_image_rounded, color: Colors.white70);
+      }
+    }
+  }
+  return Image.network(source, fit: BoxFit.contain);
+}
+
+Future<void> _saveReaderImage(BuildContext context, String source) async {
+  HapticFeedback.mediumImpact();
+  try {
+    final bytes = await _readerImageBytes(source);
+    if (bytes == null || bytes.isEmpty) {
+      throw const FileSystemException('Image data is unavailable');
+    }
+    final extension = _readerImageExtension(source);
+    const galleryChannel = MethodChannel('squartor/native_picker');
+    await galleryChannel.invokeMethod<String>('saveImageToGallery', {
+      'bytes': bytes,
+      'fileName':
+          'squartor_${DateTime.now().millisecondsSinceEpoch}.$extension',
+      'mimeType': _readerImageMimeType(extension),
+    });
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('图片已保存到相册')));
+    }
+  } catch (_) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('图片保存失败')));
+    }
+  }
+}
+
+Future<Uint8List?> _readerImageBytes(String source) async {
+  final uri = Uri.tryParse(source);
+  if (uri?.scheme == 'file') {
+    return File(uri!.toFilePath()).readAsBytes();
+  }
+  if (uri?.scheme == 'data') {
+    final comma = source.indexOf(',');
+    if (comma > 0 && source.substring(0, comma).contains(';base64')) {
+      return base64Decode(source.substring(comma + 1));
+    }
+    return null;
+  }
+  if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+    final client = HttpClient();
+    try {
+      final request = await client.getUrl(uri);
+      final response = await request.close();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return null;
+      }
+      final bytes = BytesBuilder(copy: false);
+      await for (final chunk in response) {
+        bytes.add(chunk);
+      }
+      return bytes.takeBytes();
+    } finally {
+      client.close(force: true);
+    }
+  }
+  return null;
+}
+
+String _readerImageExtension(String source) {
+  final dataType = RegExp(
+    r'^data:image/([^;,]+)',
+    caseSensitive: false,
+  ).firstMatch(source)?.group(1);
+  if (dataType != null) {
+    return dataType.toLowerCase() == 'jpeg' ? 'jpg' : dataType.toLowerCase();
+  }
+  final uri = Uri.tryParse(source);
+  final extension = path.extension(uri?.path ?? '').replaceFirst('.', '');
+  if (extension.isNotEmpty && extension.length <= 5) {
+    return extension.toLowerCase();
+  }
+  return 'jpg';
+}
+
+String _readerImageMimeType(String extension) {
+  return switch (extension.toLowerCase()) {
+    'png' => 'image/png',
+    'gif' => 'image/gif',
+    'webp' => 'image/webp',
+    'svg' => 'image/svg+xml',
+    _ => 'image/jpeg',
+  };
 }
 
 class _FrostedReaderCard extends StatelessWidget {

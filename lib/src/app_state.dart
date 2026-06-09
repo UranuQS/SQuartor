@@ -453,6 +453,7 @@ class AppState extends ChangeNotifier {
     BookEntry book, {
     required String title,
     required String author,
+    String? coverPath,
   }) async {
     final index = _books.indexWhere((item) => item.id == book.id);
     if (index == -1) {
@@ -469,32 +470,10 @@ class AppState extends ChangeNotifier {
           _books[i].copyWith(
             title: trimmedTitle,
             author: trimmedAuthor.isEmpty ? '未知作者' : trimmedAuthor,
+            coverPath: coverPath,
           )
         else
           _books[i],
-    ];
-    _libraryChanges.notifyListeners();
-    _queueBooksSave(immediate: true);
-  }
-
-  Future<void> reorderBooksInShelf({
-    required String shelfName,
-    required List<String> orderedIds,
-  }) async {
-    if (shelfName.trim().isEmpty || orderedIds.isEmpty) {
-      return;
-    }
-    final reordered = [
-      for (final id in orderedIds)
-        _books.where((book) => book.id == id).firstOrNull,
-    ].whereType<BookEntry>().toList();
-    if (reordered.length != orderedIds.length) {
-      return;
-    }
-    var cursor = 0;
-    _books = [
-      for (final book in _books)
-        if (book.shelfName == shelfName) reordered[cursor++] else book,
     ];
     _libraryChanges.notifyListeners();
     _queueBooksSave(immediate: true);

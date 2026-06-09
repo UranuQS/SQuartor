@@ -1,7 +1,11 @@
+import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lpinyin/lpinyin.dart';
+import 'package:path/path.dart' as path;
 
 import '../app_state.dart';
 import '../models.dart';
@@ -10,7 +14,6 @@ import '../widgets/book_cover.dart';
 import 'reader_screen.dart';
 
 enum _ShelfSortMode {
-  manual('手动排序'),
   name('按名称'),
   recent('最近阅读');
 
@@ -22,8 +25,6 @@ enum _ShelfSortMode {
 enum _BookMenuAction { edit, select }
 
 enum _ShelfMenuAction { import, sort, create }
-
-enum _ShelfDisplayMode { list, blocks }
 
 class _ShelfBookBlock {
   const _ShelfBookBlock({
@@ -98,7 +99,9 @@ int _compareNaturalText(String left, String right) {
     if (leftNumber != null || rightNumber != null) {
       return leftNumber != null ? -1 : 1;
     }
-    final compared = leftToken.text!.compareTo(rightToken.text!);
+    final compared = _pinyinSortKey(
+      leftToken.text!,
+    ).compareTo(_pinyinSortKey(rightToken.text!));
     if (compared != 0) {
       return compared;
     }
@@ -108,6 +111,18 @@ int _compareNaturalText(String left, String right) {
     return byLength;
   }
   return left.toLowerCase().compareTo(right.toLowerCase());
+}
+
+String _pinyinSortKey(String value) {
+  final normalized = value.trim().toLowerCase();
+  if (normalized.isEmpty) {
+    return normalized;
+  }
+  return PinyinHelper.getPinyinE(
+    normalized,
+    separator: '',
+    defPinyin: normalized,
+  ).toLowerCase();
 }
 
 List<_NaturalSortToken> _naturalSortTokens(String value) {
@@ -316,8 +331,7 @@ class ShelfScreen extends StatefulWidget {
 
 class _ShelfScreenState extends State<ShelfScreen> {
   String _selectedShelf = _defaultShelfName;
-  var _sortMode = _ShelfSortMode.manual;
-  var _displayMode = _ShelfDisplayMode.list;
+  var _sortMode = _ShelfSortMode.name;
   final Set<String> _selectedBookIds = {};
   final Set<String> _expandedBlockKeys = {};
   final List<String> _manualSelectionHistory = [];
@@ -341,17 +355,10 @@ class _ShelfScreenState extends State<ShelfScreen> {
                   .toList();
         final visibleBooks = _sortBooks(rawVisibleBooks);
         _visibleBookIds = [for (final book in visibleBooks) book.id];
-        final blockDisplay =
-            _displayMode == _ShelfDisplayMode.blocks && !_selectionMode;
+        final blockDisplay = showingDefault;
         final bookBlocks = blockDisplay
             ? _buildBookBlocks(visibleBooks)
             : const <_ShelfBookBlock>[];
-        final reorderable =
-            !showingDefault &&
-            !_selectionMode &&
-            !blockDisplay &&
-            _sortMode == _ShelfSortMode.manual &&
-            visibleBooks.length > 1;
         final shelves = [_defaultShelfName, ...state.shelves];
         final selectedIndex = shelves
             .indexOf(_selectedShelf)
@@ -433,17 +440,6 @@ class _ShelfScreenState extends State<ShelfScreen> {
                             ),
                           ],
                         ),
-                        if (!_selectionMode) ...[
-                          const SizedBox(height: 16),
-                          _ShelfDisplaySwitch(
-                            palette: palette,
-                            mode: _displayMode,
-                            onChanged: (mode) {
-                              HapticFeedback.selectionClick();
-                              setState(() => _displayMode = mode);
-                            },
-                          ),
-                        ],
                       ],
                     ),
                   ),
@@ -491,6 +487,8 @@ class _ShelfScreenState extends State<ShelfScreen> {
                                 block: block,
                                 palette: palette,
                                 expanded: expanded,
+                                selectionMode: _selectionMode,
+                                selectedBookIds: _selectedBookIds,
                                 onToggle: () {
                                   HapticFeedback.selectionClick();
                                   setState(() {
@@ -501,80 +499,24 @@ class _ShelfScreenState extends State<ShelfScreen> {
                                     }
                                   });
                                 },
-                                onOpenBook: _openBook,
-                                onLongPressBook: (book) =>
-                                    _showBookMenu(context, book),
+                                onOpenBook: (book) {
+                                  if (_selectionMode) {
+                                    HapticFeedback.selectionClick();
+                                    _toggleSelection(book);
+                                  } else {
+                                    _openBook(book);
+                                  }
+                                },
+                                onLongPressBook: (book) {
+                                  if (_selectionMode) {
+                                    HapticFeedback.selectionClick();
+                                    _toggleSelection(book);
+                                  } else {
+                                    _showBookMenu(context, book);
+                                  }
+                                },
                               );
                             },
-                          )
-                        : reorderable
-                        ? SliverToBoxAdapter(
-                            child: ReorderableListView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              buildDefaultDragHandles: false,
-                              proxyDecorator: (child, index, animation) {
-                                return AnimatedBuilder(
-                                  animation: animation,
-                                  child: child,
-                                  builder: (context, child) {
-                                    final t = Curves.easeOutCubic.transform(
-                                      animation.value,
-                                    );
-                                    return Transform.scale(
-                                      scale: 1 + t * .015,
-                                      child: Opacity(
-                                        opacity: .96,
-                                        child: Material(
-                                          type: MaterialType.transparency,
-                                          child: child,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                );
-                              },
-                              itemCount: visibleBooks.length,
-                              onReorderItem: (oldIndex, newIndex) {
-                                final reordered = [...visibleBooks];
-                                final moved = reordered.removeAt(oldIndex);
-                                reordered.insert(newIndex, moved);
-                                widget.state.reorderBooksInShelf(
-                                  shelfName: _selectedShelf,
-                                  orderedIds: [
-                                    for (final book in reordered) book.id,
-                                  ],
-                                );
-                              },
-                              itemBuilder: (context, index) {
-                                final book = visibleBooks[index];
-                                return Padding(
-                                  key: ValueKey('shelf-${book.id}'),
-                                  padding: EdgeInsets.only(
-                                    bottom: index == visibleBooks.length - 1
-                                        ? 0
-                                        : 22,
-                                  ),
-                                  child: _BookTile(
-                                    book: book,
-                                    palette: palette,
-                                    selected: false,
-                                    selectionMode: false,
-                                    trailing:
-                                        ReorderableDelayedDragStartListener(
-                                          index: index,
-                                          child: Icon(
-                                            Icons.drag_handle_rounded,
-                                            color: palette.subtle,
-                                          ),
-                                        ),
-                                    onTap: () => _openBook(book),
-                                    onLongPress: () =>
-                                        _showBookMenu(context, book),
-                                  ),
-                                );
-                              },
-                            ),
                           )
                         : SliverList.separated(
                             itemCount: visibleBooks.length,
@@ -655,8 +597,6 @@ class _ShelfScreenState extends State<ShelfScreen> {
   List<BookEntry> _sortBooks(List<BookEntry> books) {
     final sorted = [...books];
     switch (_sortMode) {
-      case _ShelfSortMode.manual:
-        return sorted;
       case _ShelfSortMode.name:
         sorted.sort((a, b) {
           final byTitle = _compareNaturalText(a.title, b.title);
@@ -687,18 +627,18 @@ class _ShelfScreenState extends State<ShelfScreen> {
     for (final book in books) {
       final title = _blockTitleForBook(book);
       final author = book.author.trim();
-      final key = '${author.toLowerCase()}::$title';
+      final key = '${author.toLowerCase()}::${_seriesKeyForTitle(title)}';
       groups.putIfAbsent(key, () => <BookEntry>[]).add(book);
       titles.putIfAbsent(key, () => title);
       authors.putIfAbsent(key, () => author);
     }
-    final blocks = _mergeAdjacentVolumeBlocks([
+    final blocks = _mergeRelatedSeriesBlocks([
       for (final entry in groups.entries)
         _ShelfBookBlock(
           key: entry.key,
           title: titles[entry.key] ?? entry.value.first.title,
           author: authors[entry.key] ?? entry.value.first.author,
-          books: entry.value,
+          books: _sortBlockBooks(entry.value),
         ),
     ]);
     switch (_sortMode) {
@@ -706,13 +646,11 @@ class _ShelfScreenState extends State<ShelfScreen> {
         blocks.sort((a, b) => _compareNaturalText(a.title, b.title));
       case _ShelfSortMode.recent:
         blocks.sort((a, b) => b.lastTouchedAt.compareTo(a.lastTouchedAt));
-      case _ShelfSortMode.manual:
-        break;
     }
     return blocks;
   }
 
-  List<_ShelfBookBlock> _mergeAdjacentVolumeBlocks(
+  List<_ShelfBookBlock> _mergeRelatedSeriesBlocks(
     List<_ShelfBookBlock> blocks,
   ) {
     if (blocks.length < 2) {
@@ -720,27 +658,11 @@ class _ShelfScreenState extends State<ShelfScreen> {
     }
     final result = <_ShelfBookBlock>[];
     for (final block in blocks) {
-      final firstVolume = _bookVolumeNumber(block.books.first);
       final candidateIndex = result.lastIndexWhere((candidate) {
-        if (candidate.author.trim().toLowerCase() !=
-            block.author.trim().toLowerCase()) {
+        if (!_shouldMergeSeriesBlocks(candidate, block)) {
           return false;
         }
-        if (candidate.books.length < 2 || block.books.length != 1) {
-          return false;
-        }
-        final maxVolume = candidate.books
-            .map(_bookVolumeNumber)
-            .whereType<int>()
-            .fold<int?>(null, (max, value) {
-              if (max == null || value > max) {
-                return value;
-              }
-              return max;
-            });
-        return firstVolume != null &&
-            maxVolume != null &&
-            firstVolume == maxVolume + 1;
+        return true;
       });
       if (candidateIndex == -1) {
         result.add(block);
@@ -751,14 +673,188 @@ class _ShelfScreenState extends State<ShelfScreen> {
         key: candidate.key,
         title: candidate.title,
         author: candidate.author,
-        books: [...candidate.books, ...block.books],
+        books: _sortBlockBooks([...candidate.books, ...block.books]),
       );
     }
     return result;
   }
 
+  bool _shouldMergeSeriesBlocks(
+    _ShelfBookBlock candidate,
+    _ShelfBookBlock block,
+  ) {
+    final candidateKey = _seriesKeyForTitle(candidate.title);
+    final blockKey = _seriesKeyForTitle(block.title);
+    final titleClose =
+        candidateKey == blockKey ||
+        candidateKey.contains(blockKey) ||
+        blockKey.contains(candidateKey) ||
+        _seriesTitleSimilarity(candidateKey, blockKey) >= .66;
+    final candidateAuthor = _authorKey(candidate.author);
+    final blockAuthor = _authorKey(block.author);
+    final hasBothAuthors = candidateAuthor.isNotEmpty && blockAuthor.isNotEmpty;
+    final authorCompatible =
+        hasBothAuthors &&
+        (candidateAuthor == blockAuthor ||
+            candidateAuthor.contains(blockAuthor) ||
+            blockAuthor.contains(candidateAuthor));
+    if (!titleClose && !authorCompatible) {
+      return false;
+    }
+    if (!authorCompatible &&
+        _seriesTitleSimilarity(candidateKey, blockKey) < .86) {
+      return false;
+    }
+    final candidateVolumes = candidate.books.map(_bookVolumeNumber).toList();
+    final blockVolumes = block.books.map(_bookVolumeNumber).toList();
+    final knownCandidate = candidateVolumes.whereType<int>().toList();
+    final knownBlock = blockVolumes.whereType<int>().toList();
+    if (knownCandidate.isEmpty || knownBlock.isEmpty) {
+      return titleClose &&
+          (candidate.books.length >= 2 ||
+              authorCompatible &&
+                  (_isSeriesExtra(candidate.books.first.title) ||
+                      _isSeriesExtra(block.books.first.title)));
+    }
+    final candidateSet = knownCandidate.toSet();
+    final blockSet = knownBlock.toSet();
+    if (candidateSet.intersection(blockSet).isNotEmpty) {
+      return false;
+    }
+    final minCandidate = knownCandidate.reduce(math.min);
+    final maxCandidate = knownCandidate.reduce(math.max);
+    final minBlock = knownBlock.reduce(math.min);
+    final maxBlock = knownBlock.reduce(math.max);
+    final volumeClose =
+        minBlock <= maxCandidate + 2 && maxBlock >= minCandidate - 2;
+    if (titleClose) {
+      return volumeClose;
+    }
+    return authorCompatible &&
+        candidate.books.length >= 3 &&
+        block.books.length == 1 &&
+        (minBlock == maxCandidate + 1 || maxBlock == minCandidate - 1);
+  }
+
+  List<BookEntry> _sortBlockBooks(List<BookEntry> books) {
+    return [...books]..sort((a, b) {
+      final aVolume = _bookVolumeNumber(a);
+      final bVolume = _bookVolumeNumber(b);
+      if (aVolume != null && bVolume != null) {
+        final byVolume = aVolume.compareTo(bVolume);
+        if (byVolume != 0) {
+          return byVolume;
+        }
+      }
+      final byTitle = _compareNaturalText(a.title, b.title);
+      if (byTitle != 0) {
+        return byTitle;
+      }
+      return _compareNaturalText(a.author, b.author);
+    });
+  }
+
+  String _seriesKeyForTitle(String title) {
+    var cleaned = title.toLowerCase();
+    const aliases = <String, String>{
+      '我的妹妹不可能那么可爱': '我的妹妹哪有这么可爱',
+      '我的妹妹不可能这么可爱': '我的妹妹哪有这么可爱',
+      '我的妹妹不可能那麼可愛': '我的妹妹哪有这么可爱',
+      '我的妹妹哪有那麼可愛': '我的妹妹哪有这么可爱',
+    };
+    for (final entry in aliases.entries) {
+      cleaned = cleaned.replaceAll(entry.key, entry.value);
+    }
+    cleaned = cleaned
+        .replaceFirst(
+          RegExp(
+            r'[\s\-_:：·.]*?(?:番外|外传|外傳|短篇|特典|if线|if線|\bif\b|bd|dvd|广播剧|廣播劇|携带版|攜帶版).*$',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .replaceAll(RegExp(r'[\s\-_·・:：,，.。!！?？\[\]【】()（）]+'), '')
+        .replaceAll(
+          RegExp(
+            r'(台版|臺版|个人翻译|個人翻譯|翻译|翻譯|epub|txt|番外|外传|外傳|短篇|特典|if线|if線|if|bd|dvd|广播剧|廣播劇|携带版|攜帶版)',
+            caseSensitive: false,
+          ),
+          '',
+        );
+    return _pinyinSortKey(cleaned);
+  }
+
+  double _seriesTitleSimilarity(String left, String right) {
+    return math.max(_similarity(left, right), _bigramSimilarity(left, right));
+  }
+
+  double _bigramSimilarity(String left, String right) {
+    if (left.length < 2 || right.length < 2) {
+      return _similarity(left, right);
+    }
+    Set<String> grams(String value) => {
+      for (var index = 0; index < value.length - 1; index++)
+        value.substring(index, index + 2),
+    };
+    final leftGrams = grams(left);
+    final rightGrams = grams(right);
+    final intersection = leftGrams.intersection(rightGrams).length;
+    return (2 * intersection) / (leftGrams.length + rightGrams.length);
+  }
+
+  bool _isSeriesExtra(String title) {
+    return RegExp(
+      r'(番外|外传|外傳|短篇|特典|if线|if線|\bif\b|bd|dvd|广播剧|廣播劇|携带版|攜帶版)',
+      caseSensitive: false,
+    ).hasMatch(title);
+  }
+
+  String _authorKey(String author) {
+    return _pinyinSortKey(
+      author.toLowerCase().replaceAll(
+        RegExp(r'[\s\-_·・:：,，.。!！?？\[\]【】()（）]+'),
+        '',
+      ),
+    );
+  }
+
+  double _similarity(String left, String right) {
+    if (left.isEmpty || right.isEmpty) {
+      return 0;
+    }
+    if (left == right) {
+      return 1;
+    }
+    final distance = _levenshtein(left, right);
+    return 1 - distance / math.max(left.length, right.length);
+  }
+
+  int _levenshtein(String left, String right) {
+    final previous = List<int>.generate(right.length + 1, (index) => index);
+    final current = List<int>.filled(right.length + 1, 0);
+    for (var i = 0; i < left.length; i++) {
+      current[0] = i + 1;
+      for (var j = 0; j < right.length; j++) {
+        final cost = left.codeUnitAt(i) == right.codeUnitAt(j) ? 0 : 1;
+        current[j + 1] = math.min(
+          math.min(current[j] + 1, previous[j + 1] + 1),
+          previous[j] + cost,
+        );
+      }
+      previous.setAll(0, current);
+    }
+    return previous[right.length];
+  }
+
   String _blockTitleForBook(BookEntry book) {
     var title = book.title.trim();
+    title = title.replaceAll(
+      RegExp(
+        r'[\s\-_:：·.]*第?\s*[\d一二三四五六七八九十百千万零〇两]+\s*(?:卷|册|集)?\s*(?=(?:番外|外传|外傳|短篇|特典|if线|if線|if|bd|dvd|广播剧|廣播劇|携带版|攜帶版).*$).*$',
+        caseSensitive: false,
+      ),
+      '',
+    );
     title = title.replaceAll(
       RegExp(
         r'[\s\-_:：·.]*[(（\[]?\s*(?:vol(?:ume)?|卷|第)\s*[\d一二三四五六七八九十百千万零〇两]+(?:卷|册|集)?\s*[)）\]]?\s*$',
@@ -780,6 +876,10 @@ class _ShelfScreenState extends State<ShelfScreen> {
       RegExp(r'(?:第|卷|vol(?:ume)?\.?\s*)\s*([0-9]+)', caseSensitive: false),
       RegExp(r'([0-9]+)\s*(?:卷|册|集)\s*$', caseSensitive: false),
       RegExp(r'([0-9]+)\s*$', caseSensitive: false),
+      RegExp(
+        r'([0-9]+)\s*(?=(?:番外|外传|外傳|短篇|特典|if线|if線|if|bd|dvd|广播剧|廣播劇|携带版|攜帶版))',
+        caseSensitive: false,
+      ),
       RegExp(r'(?:第|卷)\s*([一二三四五六七八九十百千万零〇两]+)'),
       RegExp(r'([一二三四五六七八九十百千万零〇两]+)\s*(?:卷|册|集)\s*$'),
     ];
@@ -913,52 +1013,125 @@ class _ShelfScreenState extends State<ShelfScreen> {
     final palette = widget.state.palette;
     final titleController = TextEditingController(text: book.title);
     final authorController = TextEditingController(text: book.author);
-    final result = await _showShelfFloatingDialog<(String, String)>(
+    String? selectedCoverPath;
+    final result = await _showShelfFloatingDialog<(String, String, String?)>(
       context: context,
       palette: palette,
-      child: _ShelfDialogPanel(
-        palette: palette,
-        title: '编辑书籍信息',
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, (
-              titleController.text,
-              authorController.text,
-            )),
-            child: const Text('保存'),
-          ),
-        ],
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _ShelfTextField(
-              controller: titleController,
-              palette: palette,
-              label: '标题',
-              autofocus: true,
+      child: StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          final previewPath = selectedCoverPath ?? book.coverPath;
+          return _ShelfDialogPanel(
+            palette: palette,
+            title: '编辑书籍信息',
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, (
+                  titleController.text,
+                  authorController.text,
+                  selectedCoverPath,
+                )),
+                child: const Text('保存'),
+              ),
+            ],
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: SizedBox(
+                        width: 64,
+                        height: 90,
+                        child: previewPath == null
+                            ? BookCover(
+                                book: book,
+                                palette: palette,
+                                width: 64,
+                                height: 90,
+                                radius: 12,
+                              )
+                            : Image.file(
+                                File(previewPath),
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => BookCover(
+                                  book: book,
+                                  palette: palette,
+                                  width: 64,
+                                  height: 90,
+                                  radius: 12,
+                                ),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final picked = await FilePicker.pickFiles(
+                            type: FileType.image,
+                            allowMultiple: false,
+                            withData: false,
+                          );
+                          final pickedPath = picked?.files.single.path;
+                          if (pickedPath != null && dialogContext.mounted) {
+                            setDialogState(
+                              () => selectedCoverPath = pickedPath,
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.image_outlined),
+                        label: const Text('更换封面'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                _ShelfTextField(
+                  controller: titleController,
+                  palette: palette,
+                  label: '标题',
+                  autofocus: true,
+                ),
+                const SizedBox(height: 12),
+                _ShelfTextField(
+                  controller: authorController,
+                  palette: palette,
+                  label: '作者',
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            _ShelfTextField(
-              controller: authorController,
-              palette: palette,
-              label: '作者',
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
     final title = result?.$1;
     final author = result?.$2;
+    final pickedCoverPath = result?.$3;
     titleController.dispose();
     authorController.dispose();
     if (title == null || author == null || title.trim().isEmpty) {
       return;
     }
-    await widget.state.updateBookMetadata(book, title: title, author: author);
+    String? coverPath;
+    if (pickedCoverPath != null) {
+      final source = File(pickedCoverPath);
+      final extension = path.extension(pickedCoverPath).toLowerCase();
+      final targetDir = Directory(book.bookDir);
+      await targetDir.create(recursive: true);
+      final target = File(path.join(targetDir.path, 'custom_cover$extension'));
+      coverPath = (await source.copy(target.path)).path;
+    }
+    await widget.state.updateBookMetadata(
+      book,
+      title: title,
+      author: author,
+      coverPath: coverPath,
+    );
   }
 
   Future<void> _showSortSheet(BuildContext context) async {
@@ -972,9 +1145,7 @@ class _ShelfScreenState extends State<ShelfScreen> {
           for (final mode in _ShelfSortMode.values)
             _ShelfActionTile(
               palette: palette,
-              icon: mode == _ShelfSortMode.manual
-                  ? Icons.drag_handle_rounded
-                  : mode == _ShelfSortMode.name
+              icon: mode == _ShelfSortMode.name
                   ? Icons.sort_by_alpha_rounded
                   : Icons.history_rounded,
               title: mode.label,
@@ -1670,7 +1841,7 @@ class _SelectionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget compactAction({
+    Widget chipAction({
       required IconData icon,
       required String label,
       required Color color,
@@ -1678,130 +1849,29 @@ class _SelectionBar extends StatelessWidget {
     }) {
       final enabled = onPressed != null;
       final effectiveColor = enabled ? color : palette.muted;
-      return TextButton.icon(
-        style: TextButton.styleFrom(
-          foregroundColor: effectiveColor,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-        onPressed: onPressed,
-        icon: Icon(icon, size: 19),
-        label: Text(
-          label,
-          maxLines: 1,
-          style: TextStyle(
-            color: effectiveColor,
-            fontWeight: AppTextWeight.medium,
-          ),
-        ),
-      );
-    }
-
-    Widget divider() => Container(width: 1, height: 24, color: palette.line);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: palette.surface,
+      return Material(
+        color: enabled
+            ? palette.background.withValues(alpha: .72)
+            : palette.line.withValues(alpha: .28),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: palette.line),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: .3),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            compactAction(
-              icon: Icons.select_all_rounded,
-              label: '选中区间',
-              color: palette.text,
-              onPressed: rangeEnabled ? onSelectRange : null,
-            ),
-            divider(),
-            compactAction(
-              icon: Icons.undo_rounded,
-              label: '撤回',
-              color: palette.text,
-              onPressed: undoEnabled ? onUndo : null,
-            ),
-            divider(),
-            TextButton.icon(
-              onPressed: onMove,
-              icon: Icon(Icons.drive_file_move_rounded, color: palette.text),
-              label: Text('移动到书架', style: TextStyle(color: palette.text)),
-            ),
-            Container(width: 1, height: 24, color: palette.line),
-            TextButton.icon(
-              onPressed: onDelete,
-              icon: Icon(Icons.delete_rounded, color: palette.accentText),
-              label: Text('删除', style: TextStyle(color: palette.accentText)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ShelfDisplaySwitch extends StatelessWidget {
-  const _ShelfDisplaySwitch({
-    required this.palette,
-    required this.mode,
-    required this.onChanged,
-  });
-
-  final AppPalette palette;
-  final _ShelfDisplayMode mode;
-  final ValueChanged<_ShelfDisplayMode> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    Widget item({
-      required _ShelfDisplayMode value,
-      required IconData icon,
-      required String label,
-    }) {
-      final selected = mode == value;
-      return Expanded(
         child: InkWell(
           borderRadius: BorderRadius.circular(999),
-          onTap: () => onChanged(value),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            decoration: BoxDecoration(
-              color: selected
-                  ? palette.primarySoft.withValues(
-                      alpha: palette.isLight ? .3 : .24,
-                    )
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(999),
-            ),
+          onTap: onPressed,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  icon,
-                  size: 18,
-                  color: selected ? palette.accentText : palette.muted,
-                ),
+                Icon(icon, size: 18, color: effectiveColor),
                 const SizedBox(width: 6),
                 Text(
                   label,
+                  maxLines: 1,
                   style: TextStyle(
-                    color: selected ? palette.accentText : palette.muted,
-                    fontSize: 13,
-                    fontWeight: selected
-                        ? AppTextWeight.semibold
-                        : AppTextWeight.medium,
+                    color: effectiveColor,
+                    fontSize: 13.5,
+                    height: 1,
+                    fontWeight: AppTextWeight.medium,
                   ),
                 ),
               ],
@@ -1811,24 +1881,105 @@ class _ShelfDisplaySwitch extends StatelessWidget {
       );
     }
 
+    Widget primaryAction({
+      required IconData icon,
+      required String label,
+      required Color foreground,
+      required Color background,
+      required VoidCallback onPressed,
+    }) {
+      return FilledButton.icon(
+        style: FilledButton.styleFrom(
+          elevation: 0,
+          foregroundColor: foreground,
+          backgroundColor: background,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 15,
+            fontWeight: AppTextWeight.semibold,
+          ),
+        ),
+        onPressed: onPressed,
+        icon: Icon(icon, size: 20),
+        label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+      );
+    }
+
     return Container(
-      padding: const EdgeInsets.all(5),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: palette.surface,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(30),
         border: Border.all(color: palette.line),
-      ),
-      child: Row(
-        children: [
-          item(
-            value: _ShelfDisplayMode.list,
-            icon: Icons.view_agenda_outlined,
-            label: '列表',
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: .18),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
           ),
-          item(
-            value: _ShelfDisplayMode.blocks,
-            icon: Icons.dashboard_customize_outlined,
-            label: '分块',
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              chipAction(
+                icon: Icons.select_all_rounded,
+                label: '选中区间',
+                color: palette.text,
+                onPressed: rangeEnabled ? onSelectRange : null,
+              ),
+              const SizedBox(width: 8),
+              chipAction(
+                icon: Icons.undo_rounded,
+                label: '撤回',
+                color: palette.text,
+                onPressed: undoEnabled ? onUndo : null,
+              ),
+              const Spacer(),
+              Icon(
+                Icons.touch_app_rounded,
+                size: 18,
+                color: palette.muted.withValues(alpha: .72),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: primaryAction(
+                  icon: Icons.drive_file_move_rounded,
+                  label: '移动到书架',
+                  foreground:
+                      ThemeData.estimateBrightnessForColor(
+                            palette.accentText,
+                          ) ==
+                          Brightness.dark
+                      ? Colors.white
+                      : Colors.black,
+                  background: palette.accentText,
+                  onPressed: onMove,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: primaryAction(
+                  icon: Icons.delete_rounded,
+                  label: '删除',
+                  foreground: palette.accentText,
+                  background: palette.accentText.withValues(alpha: .13),
+                  onPressed: onDelete,
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -1841,6 +1992,8 @@ class _BookBlockCard extends StatelessWidget {
     required this.block,
     required this.palette,
     required this.expanded,
+    required this.selectionMode,
+    required this.selectedBookIds,
     required this.onToggle,
     required this.onOpenBook,
     required this.onLongPressBook,
@@ -1849,6 +2002,8 @@ class _BookBlockCard extends StatelessWidget {
   final _ShelfBookBlock block;
   final AppPalette palette;
   final bool expanded;
+  final bool selectionMode;
+  final Set<String> selectedBookIds;
   final VoidCallback onToggle;
   final ValueChanged<BookEntry> onOpenBook;
   final ValueChanged<BookEntry> onLongPressBook;
@@ -1886,48 +2041,65 @@ class _BookBlockCard extends StatelessWidget {
                       ),
                     ),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            block.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: palette.text,
-                              fontSize: 19,
-                              height: 1.18,
-                              fontWeight: AppTextWeight.semibold,
+                      child: SizedBox(
+                        height: 106,
+                        child: Stack(
+                          children: [
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              top: 0,
+                              bottom: 20,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    block.title,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: palette.text,
+                                      fontSize: 19,
+                                      height: 1.18,
+                                      fontWeight: AppTextWeight.semibold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 7),
+                                  Text(
+                                    '${books.length} 本 · ${block.chapterCount} 章',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: palette.muted,
+                                      fontSize: 12.5,
+                                      height: 1.15,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    bookWordCountLabel(block.wordCount),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: palette.muted,
+                                      fontSize: 12.5,
+                                      height: 1.15,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 7),
-                          Text(
-                            '${books.length} 本 · ${block.chapterCount} 章',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: palette.muted,
-                              fontSize: 12.5,
-                              height: 1.15,
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: 0,
+                              child: _ShelfProgressLine(
+                                progress: block.progress.clamp(0, 1),
+                                palette: palette,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            bookWordCountLabel(block.wordCount),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: palette.muted,
-                              fontSize: 12.5,
-                              height: 1.15,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          _ShelfProgressLine(
-                            progress: block.progress.clamp(0, 1),
-                            palette: palette,
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -1940,35 +2112,46 @@ class _BookBlockCard extends StatelessWidget {
                 ),
               ),
             ),
-            if (expanded) Divider(height: 1, color: palette.line),
-            if (expanded) const SizedBox(height: 12),
-            if (expanded)
-              AnimatedSize(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                alignment: Alignment.topCenter,
-                child: Column(
-                  children: [
-                    for (
-                      var index = 0;
-                      index < visibleBooks.length;
-                      index++
-                    ) ...[
-                      if (index > 0)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          child: Divider(height: 1, color: palette.line),
-                        ),
-                      _BookBlockRow(
-                        book: visibleBooks[index],
-                        palette: palette,
-                        onTap: () => onOpenBook(visibleBooks[index]),
-                        onLongPress: () => onLongPressBook(visibleBooks[index]),
-                      ),
-                    ],
-                  ],
-                ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 260),
+              reverseDuration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: ClipRect(
+                child: expanded
+                    ? Column(
+                        children: [
+                          Divider(height: 1, color: palette.line),
+                          const SizedBox(height: 12),
+                          for (
+                            var index = 0;
+                            index < visibleBooks.length;
+                            index++
+                          ) ...[
+                            if (index > 0)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                child: Divider(height: 1, color: palette.line),
+                              ),
+                            _BookBlockRow(
+                              book: visibleBooks[index],
+                              palette: palette,
+                              selected: selectedBookIds.contains(
+                                visibleBooks[index].id,
+                              ),
+                              selectionMode: selectionMode,
+                              onTap: () => onOpenBook(visibleBooks[index]),
+                              onLongPress: () =>
+                                  onLongPressBook(visibleBooks[index]),
+                            ),
+                          ],
+                        ],
+                      )
+                    : const SizedBox.shrink(),
               ),
+            ),
           ],
         ),
       ),
@@ -1980,12 +2163,16 @@ class _BookBlockRow extends StatelessWidget {
   const _BookBlockRow({
     required this.book,
     required this.palette,
+    required this.selected,
+    required this.selectionMode,
     required this.onTap,
     required this.onLongPress,
   });
 
   final BookEntry book;
   final AppPalette palette;
+  final bool selected;
+  final bool selectionMode;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
@@ -2013,16 +2200,31 @@ class _BookBlockRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    book.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: palette.text,
-                      fontSize: 16.5,
-                      height: 1.16,
-                      fontWeight: AppTextWeight.semibold,
-                    ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          book.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: palette.text,
+                            fontSize: 16.5,
+                            height: 1.16,
+                            fontWeight: AppTextWeight.semibold,
+                          ),
+                        ),
+                      ),
+                      if (selectionMode)
+                        Icon(
+                          selected
+                              ? Icons.check_circle_rounded
+                              : Icons.circle_outlined,
+                          color: selected ? palette.accentText : palette.muted,
+                          size: 23,
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 3),
                   Text(
@@ -2163,7 +2365,6 @@ class _BookTile extends StatelessWidget {
     required this.selectionMode,
     required this.onTap,
     required this.onLongPress,
-    this.trailing,
   });
 
   final BookEntry book;
@@ -2172,7 +2373,6 @@ class _BookTile extends StatelessWidget {
   final bool selectionMode;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
-  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -2236,12 +2436,6 @@ class _BookTile extends StatelessWidget {
                                         : palette.muted,
                                     size: 24,
                                   ),
-                                ),
-                              if (!selectionMode && trailing != null)
-                                SizedBox(
-                                  width: 34,
-                                  height: 34,
-                                  child: trailing,
                                 ),
                             ],
                           ),
@@ -2335,7 +2529,7 @@ class _ShelfProgressLine extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.timelapse_rounded, size: 13, color: palette.muted),
+              _ShelfProgressGlyph(progress: progress, palette: palette),
               const SizedBox(width: 4),
               Text(
                 '${(progress * 100).toStringAsFixed(0)}%',
@@ -2366,6 +2560,71 @@ class _ShelfProgressLine extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+class _ShelfProgressGlyph extends StatelessWidget {
+  const _ShelfProgressGlyph({required this.progress, required this.palette});
+
+  final double progress;
+  final AppPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: 13,
+      child: CustomPaint(
+        painter: _ShelfProgressGlyphPainter(
+          progress: progress.clamp(0, 1),
+          trackColor: palette.line,
+          progressColor: palette.accentText,
+        ),
+      ),
+    );
+  }
+}
+
+class _ShelfProgressGlyphPainter extends CustomPainter {
+  const _ShelfProgressGlyphPainter({
+    required this.progress,
+    required this.trackColor,
+    required this.progressColor,
+  });
+
+  final double progress;
+  final Color trackColor;
+  final Color progressColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = math.min(size.width, size.height) / 2 - 1.2;
+    final trackPaint = Paint()
+      ..color = trackColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8;
+    final progressPaint = Paint()
+      ..color = progressColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+    canvas.drawCircle(center, radius, trackPaint);
+    if (progress > 0) {
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        -math.pi / 2,
+        math.pi * 2 * progress,
+        false,
+        progressPaint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ShelfProgressGlyphPainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.trackColor != trackColor ||
+        oldDelegate.progressColor != progressColor;
   }
 }
 

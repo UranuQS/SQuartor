@@ -1,11 +1,14 @@
 package com.squartor.reader
 
 import android.app.Activity
+import android.content.ContentValues
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.provider.DocumentsContract
+import android.provider.MediaStore
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -20,6 +23,12 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "pickBookDirectory" -> pickBookDirectory(result)
+                    "saveImageToGallery" -> saveImageToGallery(
+                        call.argument<ByteArray>("bytes"),
+                        call.argument<String>("fileName"),
+                        call.argument<String>("mimeType"),
+                        result
+                    )
                     else -> result.notImplemented()
                 }
             }
@@ -95,6 +104,57 @@ class MainActivity : FlutterActivity() {
             pendingDirectoryResult = null
             result.error("PICK_BOOK_DIRECTORY_FAILED", error.message, null)
         }
+    }
+
+    private fun saveImageToGallery(
+        bytes: ByteArray?,
+        requestedName: String?,
+        requestedMimeType: String?,
+        result: MethodChannel.Result
+    ) {
+        if (bytes == null || bytes.isEmpty()) {
+            result.error("EMPTY_IMAGE", "Image data is empty.", null)
+            return
+        }
+        Thread {
+            try {
+                val fileName = requestedName ?: "squartor_${System.currentTimeMillis()}.jpg"
+                val mimeType = requestedMimeType ?: "image/jpeg"
+                val values = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+                    put(MediaStore.Images.Media.MIME_TYPE, mimeType)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        put(
+                            MediaStore.Images.Media.RELATIVE_PATH,
+                            "${Environment.DIRECTORY_PICTURES}/SQuartor"
+                        )
+                        put(MediaStore.Images.Media.IS_PENDING, 1)
+                    }
+                }
+                val uri = contentResolver.insert(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    values
+                ) ?: error("Unable to create gallery item.")
+                try {
+                    contentResolver.openOutputStream(uri)?.use { stream ->
+                        stream.write(bytes)
+                    } ?: error("Unable to open gallery output stream.")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        values.clear()
+                        values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                        contentResolver.update(uri, values, null, null)
+                    }
+                    runOnUiThread { result.success(uri.toString()) }
+                } catch (error: Throwable) {
+                    contentResolver.delete(uri, null, null)
+                    throw error
+                }
+            } catch (error: Throwable) {
+                runOnUiThread {
+                    result.error("SAVE_IMAGE_FAILED", error.message, null)
+                }
+            }
+        }.start()
     }
 
     private fun copyBookDocuments(

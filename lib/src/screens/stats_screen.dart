@@ -360,16 +360,11 @@ class _SelectedDayDetails extends StatelessWidget {
         if (rows.isEmpty)
           _EmptyDayCard(palette: palette, isToday: isToday)
         else
-          for (final row in rows)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _StatCard(
-                palette: palette,
-                title: row.key.title,
-                seconds: row.value,
-                compact: true,
-              ),
-            ),
+          _DailyBookBreakdownCard(
+            palette: palette,
+            rows: rows,
+            totalSeconds: total,
+          ),
       ],
     );
   }
@@ -417,47 +412,189 @@ class _LegendBox extends StatelessWidget {
   }
 }
 
+class _DailyBookBreakdownCard extends StatelessWidget {
+  const _DailyBookBreakdownCard({
+    required this.palette,
+    required this.rows,
+    required this.totalSeconds,
+  });
+
+  final AppPalette palette;
+  final List<MapEntry<BookEntry, int>> rows;
+  final int totalSeconds;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+      decoration: _detailDecoration(palette),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(Icons.menu_book_rounded, color: palette.primary, size: 19),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '阅读明细',
+                  style: TextStyle(
+                    color: palette.text,
+                    fontSize: 16,
+                    fontWeight: AppTextWeight.semibold,
+                  ),
+                ),
+              ),
+              Text(
+                '按时长排序',
+                style: TextStyle(
+                  color: palette.muted,
+                  fontSize: 12.5,
+                  fontWeight: AppTextWeight.regular,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (var index = 0; index < rows.length; index++) ...[
+            if (index > 0)
+              Divider(height: 1, color: palette.line.withValues(alpha: .52)),
+            _DailyBookBreakdownRow(
+              palette: palette,
+              book: rows[index].key,
+              seconds: rows[index].value,
+              totalSeconds: totalSeconds,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DailyBookBreakdownRow extends StatelessWidget {
+  const _DailyBookBreakdownRow({
+    required this.palette,
+    required this.book,
+    required this.seconds,
+    required this.totalSeconds,
+  });
+
+  final AppPalette palette;
+  final BookEntry book;
+  final int seconds;
+  final int totalSeconds;
+
+  @override
+  Widget build(BuildContext context) {
+    final share = totalSeconds <= 0
+        ? 0.0
+        : (seconds / totalSeconds).clamp(0.0, 1.0);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 11),
+      child: Row(
+        children: [
+          BookCover(
+            book: book,
+            palette: palette,
+            width: 42,
+            height: 56,
+            radius: 9,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        book.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: palette.text,
+                          fontSize: 15,
+                          height: 1.12,
+                          fontWeight: AppTextWeight.semibold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      _durationLabel(seconds),
+                      style: TextStyle(
+                        color: palette.primary,
+                        fontSize: 14.5,
+                        fontWeight: AppTextWeight.semibold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  '${book.safeCurrentChapter.title} · ${bookWordCountLabel(book.wordCount)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: palette.muted,
+                    fontSize: 12,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    value: share,
+                    minHeight: 5,
+                    backgroundColor: palette.line.withValues(alpha: .55),
+                    valueColor: AlwaysStoppedAnimation<Color>(palette.primary),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _StatCard extends StatelessWidget {
   const _StatCard({
     required this.palette,
     required this.seconds,
     this.title = '阅读时长',
-    this.compact = false,
   });
 
   final AppPalette palette;
   final int seconds;
   final String title;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 14 : 18,
-        vertical: compact ? 13 : 18,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
       decoration: BoxDecoration(
         color: palette.card,
-        borderRadius: BorderRadius.circular(compact ? 18 : 22),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(color: palette.line.withValues(alpha: .45)),
       ),
       child: Row(
         children: [
-          Icon(
-            Icons.access_time_rounded,
-            color: palette.primarySoft,
-            size: compact ? 22 : 26,
-          ),
-          SizedBox(width: compact ? 10 : 12),
+          Icon(Icons.access_time_rounded, color: palette.primarySoft, size: 26),
+          const SizedBox(width: 12),
           Expanded(
             child: Text(
               title,
-              maxLines: compact ? 1 : 2,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: palette.text,
-                fontSize: compact ? 15 : 16,
+                fontSize: 16,
                 fontWeight: AppTextWeight.regular,
               ),
             ),
@@ -467,7 +604,7 @@ class _StatCard extends StatelessWidget {
             seconds == 0 ? '0分钟' : _durationLabel(seconds),
             style: TextStyle(
               color: seconds == 0 ? palette.subtle : palette.primary,
-              fontSize: compact ? 15 : 16,
+              fontSize: 16,
               fontWeight: AppTextWeight.medium,
             ),
           ),
@@ -475,18 +612,18 @@ class _StatCard extends StatelessWidget {
       ),
     );
   }
+}
 
-  String _durationLabel(int seconds) {
-    final hours = seconds ~/ 3600;
-    final minutes = (seconds % 3600) ~/ 60;
-    if (hours > 0) {
-      return '$hours 小时 $minutes 分钟';
-    }
-    if (minutes > 0) {
-      return '$minutes 分钟';
-    }
-    return '$seconds 秒';
+String _durationLabel(int seconds) {
+  final hours = seconds ~/ 3600;
+  final minutes = (seconds % 3600) ~/ 60;
+  if (hours > 0) {
+    return '$hours 小时 $minutes 分钟';
   }
+  if (minutes > 0) {
+    return '$minutes 分钟';
+  }
+  return '$seconds 秒';
 }
 
 Color _heatColor(int seconds, AppPalette palette) {

@@ -44,6 +44,7 @@ dependencies:
   flutter_inappwebview: ^6.1.5
   path: ^1.9.1
   url_launcher: ^6.3.2
+  lpinyin: ^2.0.3
 
 dev_dependencies:
   flutter_test:
