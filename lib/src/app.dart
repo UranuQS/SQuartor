@@ -24,16 +24,29 @@ class SQuartorApp extends StatefulWidget {
 }
 
 class _SQuartorAppState extends State<SQuartorApp> with WidgetsBindingObserver {
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  bool _handlingExternalOpen = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _syncBrightness();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _handleExternalOpenBook();
+    });
   }
 
   @override
   void didChangePlatformBrightness() {
     _syncBrightness();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _handleExternalOpenBook();
+    }
   }
 
   @override
@@ -57,6 +70,7 @@ class _SQuartorAppState extends State<SQuartorApp> with WidgetsBindingObserver {
         final brightness = widget.state.effectiveBrightness;
         final appFontFamily = widget.state.appFontFamily ?? 'sans';
         return MaterialApp(
+          navigatorKey: _navigatorKey,
           title: 'SQuartor',
           debugShowCheckedModeBanner: false,
           theme: ThemeData(
@@ -153,6 +167,26 @@ class _SQuartorAppState extends State<SQuartorApp> with WidgetsBindingObserver {
         );
       },
     );
+  }
+
+  Future<void> _handleExternalOpenBook() async {
+    if (_handlingExternalOpen) {
+      return;
+    }
+    _handlingExternalOpen = true;
+    try {
+      final book = await widget.state.consumeAndOpenExternalBook();
+      if (!mounted || book == null) {
+        return;
+      }
+      final navigator = _navigatorKey.currentState;
+      if (navigator == null) {
+        return;
+      }
+      navigator.pushNamed(ReaderScreen.routeName, arguments: book);
+    } finally {
+      _handlingExternalOpen = false;
+    }
   }
 }
 

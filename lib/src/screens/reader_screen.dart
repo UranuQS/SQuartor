@@ -3251,7 +3251,7 @@ class _FullscreenImageViewer extends StatelessWidget {
             Positioned.fill(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onLongPress: () => _saveReaderImage(context, source),
+                onLongPress: () => _showReaderImageActions(context, source),
                 child: InteractiveViewer(
                   minScale: .8,
                   maxScale: 6,
@@ -3272,6 +3272,73 @@ class _FullscreenImageViewer extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<void> _showReaderImageActions(
+  BuildContext context,
+  String source,
+) async {
+  HapticFeedback.selectionClick();
+  await showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (sheetContext) {
+      final colors = Theme.of(sheetContext).colorScheme;
+      return SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.surface,
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: .28),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: colors.outlineVariant,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                      ),
+                      onPressed: () {
+                        Navigator.pop(sheetContext);
+                        _saveReaderImage(context, source);
+                      },
+                      icon: const Icon(Icons.save_alt_rounded),
+                      label: const Text('保存图片'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    },
+  );
 }
 
 Widget _readerImageForSource(String source) {

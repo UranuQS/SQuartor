@@ -8,10 +8,11 @@ import 'models.dart';
 
 class AppState extends ChangeNotifier {
   AppState(this._repository) {
-    unawaited(load());
+    _initialLoad = load();
   }
 
   final BookRepository _repository;
+  late final Future<void> _initialLoad;
   final ChangeNotifier _appThemeChanges = ChangeNotifier();
   final ChangeNotifier _readingStyleChanges = ChangeNotifier();
   final ChangeNotifier _readerChromeChanges = ChangeNotifier();
@@ -76,6 +77,7 @@ class AppState extends ChangeNotifier {
   AppPalette get palette => _style.resolvePalette(effectiveBrightness);
   bool get loading => _loading;
   String? get error => _error;
+  Future<void> get ready => _initialLoad;
 
   void setPlatformBrightness(Brightness brightness) {
     if (_platformBrightness == brightness) {
@@ -124,6 +126,27 @@ class AppState extends ChangeNotifier {
     } catch (error) {
       _error = '导入失败：$error';
       _messageChanges.notifyListeners();
+    }
+  }
+
+  Future<BookEntry?> consumeAndOpenExternalBook() async {
+    try {
+      await ready;
+      final pending = await _repository.consumePendingOpenBook();
+      if (pending == null) {
+        return null;
+      }
+      final existing = await _findExistingExternalBook(pending);
+      if (existing != null) {
+        return existing;
+      }
+      final book = await _repository.importBookFile(pending.path);
+      _storeImportedBooks([book]);
+      return book;
+    } catch (error) {
+      _error = '打开文件失败：$error';
+      _messageChanges.notifyListeners();
+      return null;
     }
   }
 
@@ -269,6 +292,38 @@ class AppState extends ChangeNotifier {
     _error = null;
     _libraryChanges.notifyListeners();
     _messageChanges.notifyListeners();
+  }
+
+  Future<BookEntry?> _findExistingExternalBook(PendingOpenBook pending) async {
+    final pendingName = _normalizedFileName(pending.name);
+    if (pendingName.isEmpty) {
+      return null;
+    }
+    for (final book in _books) {
+      if (_normalizedFileName(book.sourcePath) != pendingName) {
+        continue;
+      }
+      if (pending.size == null) {
+        return book;
+      }
+      try {
+        final source = File(book.sourcePath);
+        if (await source.exists() && await source.length() == pending.size) {
+          return book;
+        }
+      } catch (_) {
+        // If metadata cannot be read, keep looking instead of risking mismatch.
+      }
+    }
+    return null;
+  }
+
+  String _normalizedFileName(String value) {
+    final normalized = value.replaceAll('\\', '/');
+    final slash = normalized.lastIndexOf('/');
+    return (slash >= 0 ? normalized.substring(slash + 1) : normalized)
+        .trim()
+        .toLowerCase();
   }
 
   Future<String?> _registerAppFont(String? fontPath) async {

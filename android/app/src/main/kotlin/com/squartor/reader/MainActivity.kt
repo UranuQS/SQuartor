@@ -3,12 +3,14 @@ package com.squartor.reader
 import android.app.Activity
 import android.content.ContentValues
 import android.content.Intent
+import android.database.Cursor
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -16,6 +18,7 @@ import java.io.File
 
 class MainActivity : FlutterActivity() {
     private var pendingDirectoryResult: MethodChannel.Result? = null
+    private var pendingOpenBookIntent: Intent? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -23,6 +26,7 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "pickBookDirectory" -> pickBookDirectory(result)
+                    "consumePendingOpenBook" -> consumePendingOpenBook(result)
                     "saveImageToGallery" -> saveImageToGallery(
                         call.argument<ByteArray>("bytes"),
                         call.argument<String>("fileName"),
@@ -36,7 +40,14 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        captureOpenBookIntent(intent)
         requestHighestRefreshRate()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        captureOpenBookIntent(intent)
     }
 
     override fun onResume() {
@@ -103,6 +114,123 @@ class MainActivity : FlutterActivity() {
         } catch (error: Throwable) {
             pendingDirectoryResult = null
             result.error("PICK_BOOK_DIRECTORY_FAILED", error.message, null)
+        }
+    }
+
+    private fun captureOpenBookIntent(intent: Intent?) {
+        if (intent == null) return
+        val hasViewUri = intent.action == Intent.ACTION_VIEW && intent.data != null
+        val hasSendUri = intent.action == Intent.ACTION_SEND &&
+            sharedBookUri(intent) != null
+        if (hasViewUri || hasSendUri) {
+            pendingOpenBookIntent = intent
+        }
+    }
+
+    private fun consumePendingOpenBook(result: MethodChannel.Result) {
+        val openIntent = pendingOpenBookIntent
+        pendingOpenBookIntent = null
+        val uri = openIntent?.data ?: sharedBookUri(openIntent)
+        if (uri == null) {
+            result.success(null)
+            return
+        }
+        Thread {
+            try {
+                val displayName = displayNameForUri(uri) ?: "book"
+                if (!isImportableBookName(displayName) && !isImportableBookUri(uri)) {
+                    runOnUiThread { result.success(null) }
+                    return@Thread
+                }
+                val targetRoot = File(cacheDir, "open_books/${System.currentTimeMillis()}")
+                targetRoot.mkdirs()
+                val target = uniqueTargetFile(targetRoot, displayNameForImport(uri, displayName))
+                contentResolver.openInputStream(uri)?.use { input ->
+                    target.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                } ?: if (uri.scheme == "file") {
+                    File(uri.path ?: "").copyTo(target, overwrite = true)
+                } else {
+                    error("Unable to open input stream.")
+                }
+                if (!target.exists() || target.length() <= 0L) {
+                    target.delete()
+                    error("Opened file is empty.")
+                }
+                val payload = mapOf(
+                    "path" to target.absolutePath,
+                    "name" to target.name,
+                    "size" to target.length()
+                )
+                runOnUiThread { result.success(payload) }
+            } catch (error: Throwable) {
+                runOnUiThread {
+                    result.error("OPEN_BOOK_FAILED", error.message, null)
+                }
+            }
+        }.start()
+    }
+
+    private fun displayNameForImport(uri: Uri, fallback: String): String {
+        val name = fallback.ifBlank { uri.lastPathSegment ?: "book" }
+        if (isImportableBookName(name)) {
+            return name
+        }
+        val lowerMime = contentResolver.getType(uri)?.lowercase() ?: ""
+        return when {
+            lowerMime.contains("epub") -> "$name.epub"
+            lowerMime.startsWith("text/") -> "$name.txt"
+            uri.toString().lowercase().contains(".epub") -> "$name.epub"
+            uri.toString().lowercase().contains(".txt") -> "$name.txt"
+            else -> name
+        }
+    }
+
+    private fun displayNameForUri(uri: Uri): String? {
+        if (uri.scheme == "file") {
+            return File(uri.path ?: return null).name
+        }
+        var cursor: Cursor? = null
+        return try {
+            cursor = contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )
+            if (cursor != null && cursor.moveToFirst()) {
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0) cursor.getString(index) else null
+            } else {
+                null
+            }
+        } catch (_: Throwable) {
+            null
+        } finally {
+            cursor?.close()
+        } ?: uri.lastPathSegment
+    }
+
+    private fun isImportableBookUri(uri: Uri): Boolean {
+        val value = uri.toString().lowercase()
+        val type = contentResolver.getType(uri)?.lowercase() ?: ""
+        return value.contains(".epub") ||
+            value.contains(".txt") ||
+            type.contains("epub") ||
+            type.startsWith("text/")
+    }
+
+    private fun sharedBookUri(intent: Intent?): Uri? {
+        if (intent?.action != Intent.ACTION_SEND) {
+            return null
+        }
+        @Suppress("DEPRECATION")
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM)
         }
     }
 

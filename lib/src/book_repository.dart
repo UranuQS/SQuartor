@@ -213,6 +213,37 @@ class BookRepository {
     return _importTxt(File(picked));
   }
 
+  Future<BookEntry> importBookFile(String filePath) async {
+    final file = File(filePath);
+    if (!_isImportableBookPath(file.path) || !await file.exists()) {
+      throw FileSystemException('Unsupported book file', filePath);
+    }
+    final extension = path.extension(file.path).toLowerCase();
+    return extension == '.epub' ? _importEpub(file) : _importTxt(file);
+  }
+
+  Future<PendingOpenBook?> consumePendingOpenBook() async {
+    if (!Platform.isAndroid) {
+      return null;
+    }
+    final raw = await _androidPickerChannel.invokeMapMethod<String, Object?>(
+      'consumePendingOpenBook',
+    );
+    if (raw == null) {
+      return null;
+    }
+    final filePath = raw['path'] as String?;
+    if (filePath == null || filePath.isEmpty) {
+      return null;
+    }
+    final size = raw['size'];
+    return PendingOpenBook(
+      path: filePath,
+      name: raw['name'] as String? ?? path.basename(filePath),
+      size: size is int ? size : int.tryParse('$size'),
+    );
+  }
+
   Future<List<BookEntry>> pickAndImportBooks() async {
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
@@ -1328,6 +1359,14 @@ class BookRepositorySnapshot {
   final List<String> shelves;
   final Map<String, Map<String, int>> readingStats;
   final ReadingStyle style;
+}
+
+class PendingOpenBook {
+  const PendingOpenBook({required this.path, required this.name, this.size});
+
+  final String path;
+  final String name;
+  final int? size;
 }
 
 class _ManifestItem {
