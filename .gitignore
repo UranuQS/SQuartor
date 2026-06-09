@@ -43,3 +43,14 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local verification artifacts
+/.workbuddy/
+/artifacts/
+/design_previews/
+/build-log*.txt
+/design-preview.html
+/mumu-*.png
+/reader-*.png
+/squartor_*.png
+/squartor-*.png
