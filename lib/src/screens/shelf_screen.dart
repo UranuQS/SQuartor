@@ -2195,10 +2195,11 @@ class _BookBlockRow extends StatelessWidget {
           ),
           const SizedBox(width: 13),
           Expanded(
-            child: SizedBox(
-              height: 108,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 108),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2259,7 +2260,7 @@ class _BookBlockRow extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const Spacer(),
+                  const SizedBox(height: 8),
                   _ShelfProgressLine(progress: book.progress, palette: palette),
                 ],
               ),
@@ -2522,26 +2523,23 @@ class _ShelfProgressLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Transform.translate(
-          offset: const Offset(0, 2),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _ShelfProgressGlyph(progress: progress, palette: palette),
-              const SizedBox(width: 4),
-              Text(
-                '${(progress * 100).toStringAsFixed(0)}%',
-                style: TextStyle(
-                  color: palette.muted,
-                  fontSize: 11.5,
-                  height: 1,
-                  fontWeight: AppTextWeight.medium,
-                ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _ShelfProgressGlyph(progress: progress, palette: palette),
+            const SizedBox(width: 4),
+            Text(
+              '${(progress * 100).toStringAsFixed(0)}%',
+              style: TextStyle(
+                color: palette.muted,
+                fontSize: 11.5,
+                height: 1,
+                fontWeight: AppTextWeight.medium,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
         const SizedBox(width: 8),
         Expanded(
