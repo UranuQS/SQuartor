@@ -85,4 +85,33 @@ void main() {
     expect(html, contains('insert.jpg'));
     expect(flow.mediaCount, 1);
   });
+
+  test('converts known note marker images into clickable footnote refs', () {
+    final flow = normalizeEpubFlow(
+      '''
+      <html><body>
+        <p>Text<a class="duokan-footnote" epub:type="noteref" href="#note1">
+          <sup><img alt="note" class="footnote" src="../Images/note.png" /></sup>
+        </a>continues</p>
+        <aside epub:type="footnote" id="note1">
+          <ol><li>Editor note text.</li></ol>
+        </aside>
+      </body></html>
+      ''',
+      resolveLink: sameHref,
+      resolveResource: (href) => 'resource:$href',
+    );
+
+    final html = flow.blocks.join();
+    expect(html, isNot(contains('note.png')));
+    expect(html, contains('class="sq-footnote-ref"'));
+    expect(html, contains('data-footnote-id="note1"'));
+    expect(html, contains('data-footnote='));
+    expect(html, contains('</a>continues'));
+    expect(html, contains('Text'));
+    expect(html, contains('continues'));
+    expect(html, isNot(contains('<aside')));
+    expect(html, isNot(contains('<ol')));
+    expect(flow.mediaCount, 0);
+  });
 }

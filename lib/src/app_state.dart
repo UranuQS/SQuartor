@@ -6,6 +6,20 @@ import 'package:flutter/services.dart';
 import 'book_repository.dart';
 import 'models.dart';
 
+class ImportActivity {
+  const ImportActivity({
+    required this.title,
+    required this.detail,
+    required this.active,
+    required this.failed,
+  });
+
+  final String title;
+  final String detail;
+  final bool active;
+  final bool failed;
+}
+
 class AppState extends ChangeNotifier {
   AppState(this._repository) {
     _initialLoad = load();
@@ -57,6 +71,8 @@ class AppState extends ChangeNotifier {
   Timer? _shelvesSaveTimer;
   bool _booksSaveInFlight = false;
   bool _booksSavePending = false;
+  ImportActivity? _importActivity;
+  Timer? _importActivityClearTimer;
   String? _appFontFamily;
   final Set<String> _registeredAppFontFamilies = {};
 
@@ -77,6 +93,7 @@ class AppState extends ChangeNotifier {
   AppPalette get palette => _style.resolvePalette(effectiveBrightness);
   bool get loading => _loading;
   String? get error => _error;
+  ImportActivity? get importActivity => _importActivity;
   Future<void> get ready => _initialLoad;
 
   void setPlatformBrightness(Brightness brightness) {
@@ -117,14 +134,21 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> importBook() async {
+    _beginImportActivity(
+      title: '\u6b63\u5728\u5bfc\u5165\u4e66\u7c4d',
+      detail: '\u6b63\u5728\u89e3\u6790\u6587\u4ef6...',
+    );
     try {
       final book = await _repository.pickAndImportBook();
       if (book == null) {
+        _clearImportActivity();
         return;
       }
       _storeImportedBooks([book]);
+      _finishImportActivity('\u5bfc\u5165\u5b8c\u6210');
     } catch (error) {
-      _error = '导入失败：$error';
+      _finishImportActivity('\u5bfc\u5165\u5931\u8d25', failed: true);
+      _error = '????????$error';
       _messageChanges.notifyListeners();
     }
   }
@@ -140,32 +164,58 @@ class AppState extends ChangeNotifier {
       if (existing != null) {
         return existing;
       }
+      _beginImportActivity(
+        title: '\u6b63\u5728\u5bfc\u5165\u4e66\u7c4d',
+        detail: pending.name,
+      );
       final book = await _repository.importBookFile(pending.path);
       _storeImportedBooks([book]);
+      _finishImportActivity('\u5bfc\u5165\u5b8c\u6210');
       return book;
     } catch (error) {
-      _error = '打开文件失败：$error';
+      _finishImportActivity('\u5bfc\u5165\u5931\u8d25', failed: true);
+      _error = '???????????$error';
       _messageChanges.notifyListeners();
       return null;
     }
   }
 
   Future<void> importBooks() async {
+    _beginImportActivity(
+      title: '\u6b63\u5728\u6279\u91cf\u5bfc\u5165',
+      detail: '\u6b63\u5728\u8bfb\u53d6\u6240\u9009\u6587\u4ef6...',
+    );
     try {
       final books = await _repository.pickAndImportBooks();
+      if (books.isEmpty) {
+        _clearImportActivity();
+        return;
+      }
       _storeImportedBooks(books);
+      _finishImportActivity('\u5df2\u5bfc\u5165 ${books.length} \u672c\u4e66');
     } catch (error) {
-      _error = '批量导入失败：$error';
+      _finishImportActivity('\u5bfc\u5165\u5931\u8d25', failed: true);
+      _error = '???????????$error';
       _messageChanges.notifyListeners();
     }
   }
 
   Future<void> importBookDirectory() async {
+    _beginImportActivity(
+      title: '\u6b63\u5728\u5bfc\u5165\u6587\u4ef6\u5939',
+      detail: '\u6b63\u5728\u626b\u63cf\u4e66\u7c4d\u6587\u4ef6...',
+    );
     try {
       final books = await _repository.pickAndImportBookDirectory();
+      if (books.isEmpty) {
+        _clearImportActivity();
+        return;
+      }
       _storeImportedBooks(books);
+      _finishImportActivity('\u5df2\u5bfc\u5165 ${books.length} \u672c\u4e66');
     } catch (error) {
-      _error = '导入文件夹失败：$error';
+      _finishImportActivity('\u5bfc\u5165\u5931\u8d25', failed: true);
+      _error = '????????????$error';
       _messageChanges.notifyListeners();
     }
   }
@@ -224,6 +274,7 @@ class AppState extends ChangeNotifier {
         _style.letterSpacing == style.letterSpacing &&
         _style.pageMargin == style.pageMargin &&
         _style.verticalMargin == style.verticalMargin &&
+        _style.readingFlow == style.readingFlow &&
         _style.reverseTapPageTurn == style.reverseTapPageTurn &&
         _style.firstLineIndent == style.firstLineIndent &&
         _style.fontName == style.fontName &&
@@ -291,6 +342,41 @@ class AppState extends ChangeNotifier {
     _queueBooksSave(immediate: true);
     _error = null;
     _libraryChanges.notifyListeners();
+    _messageChanges.notifyListeners();
+  }
+
+  void _beginImportActivity({required String title, required String detail}) {
+    _importActivityClearTimer?.cancel();
+    _importActivity = ImportActivity(
+      title: title,
+      detail: detail,
+      active: true,
+      failed: false,
+    );
+    _messageChanges.notifyListeners();
+  }
+
+  void _finishImportActivity(String detail, {bool failed = false}) {
+    _importActivityClearTimer?.cancel();
+    _importActivity = ImportActivity(
+      title: failed ? '\u5bfc\u5165\u5931\u8d25' : '\u5bfc\u5165\u5b8c\u6210',
+      detail: detail,
+      active: false,
+      failed: failed,
+    );
+    _messageChanges.notifyListeners();
+    _importActivityClearTimer = Timer(const Duration(milliseconds: 1800), () {
+      _clearImportActivity();
+    });
+  }
+
+  void _clearImportActivity() {
+    _importActivityClearTimer?.cancel();
+    _importActivityClearTimer = null;
+    if (_importActivity == null) {
+      return;
+    }
+    _importActivity = null;
     _messageChanges.notifyListeners();
   }
 
@@ -365,6 +451,26 @@ class AppState extends ChangeNotifier {
     return 'SQuartorAppFont_${hash.toRadixString(16)}';
   }
 
+  double _readingProgress({
+    required int chapterCount,
+    required int chapterIndex,
+    required int page,
+    required int pageCount,
+  }) {
+    if (chapterCount <= 0) {
+      return 0;
+    }
+    final safeChapter = chapterIndex.clamp(0, chapterCount - 1);
+    final safePageCount = pageCount < 1 ? 1 : pageCount;
+    final safePage = page.clamp(0, safePageCount - 1);
+    final isLastChapter = safeChapter == chapterCount - 1;
+    if (safePageCount <= 1) {
+      return isLastChapter ? 1.0 : safeChapter / chapterCount;
+    }
+    final pageProgress = safePage / (safePageCount - 1);
+    return ((safeChapter + pageProgress) / chapterCount).clamp(0.0, 1.0);
+  }
+
   Future<void> updateBookProgress({
     required BookEntry book,
     required int chapterIndex,
@@ -381,12 +487,12 @@ class AppState extends ChangeNotifier {
         ? 0
         : chapterIndex.clamp(0, stored.chapters.length - 1);
     final safePage = page.clamp(0, safePageCount - 1);
-    final chapterPart = stored.chapters.isEmpty
-        ? 0.0
-        : safeChapterIndex / stored.chapters.length;
-    final pagePart = stored.chapters.isEmpty
-        ? 0.0
-        : (safePage / safePageCount) / stored.chapters.length;
+    final progress = _readingProgress(
+      chapterCount: stored.chapters.length,
+      chapterIndex: safeChapterIndex,
+      page: safePage,
+      pageCount: safePageCount,
+    );
     final cachedPageCountChanged =
         stored.chapters.isNotEmpty &&
         stored.chapters[safeChapterIndex].cachedPageCount != safePageCount;
@@ -415,7 +521,7 @@ class AppState extends ChangeNotifier {
       currentChapterIndex: safeChapterIndex,
       currentPage: safePage,
       pageCount: safePageCount,
-      progress: (chapterPart + pagePart).clamp(0.0, 0.999),
+      progress: progress,
       lastReadAt: now,
     );
     _books = [
@@ -534,6 +640,29 @@ class AppState extends ChangeNotifier {
     _queueBooksSave(immediate: true);
   }
 
+  Future<void> updateBookSeriesOverride(
+    Set<String> bookIds,
+    String? seriesName,
+  ) async {
+    if (bookIds.isEmpty) {
+      return;
+    }
+    final trimmed = seriesName?.trim();
+    final shouldClear = trimmed == null || trimmed.isEmpty;
+    _books = [
+      for (final book in _books)
+        if (bookIds.contains(book.id))
+          book.copyWith(
+            seriesOverride: shouldClear ? null : trimmed,
+            clearSeriesOverride: shouldClear,
+          )
+        else
+          book,
+    ];
+    _libraryChanges.notifyListeners();
+    _queueBooksSave(immediate: true);
+  }
+
   Future<void> moveBooksToShelf(Set<String> bookIds, String? shelfName) async {
     if (bookIds.isEmpty) {
       return;
@@ -577,6 +706,7 @@ class AppState extends ChangeNotifier {
     _booksSaveTimer?.cancel();
     _statsSaveTimer?.cancel();
     _shelvesSaveTimer?.cancel();
+    _importActivityClearTimer?.cancel();
     _appThemeChanges.dispose();
     _readingStyleChanges.dispose();
     _libraryChanges.dispose();

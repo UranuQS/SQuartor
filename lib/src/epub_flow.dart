@@ -66,9 +66,11 @@ EpubFlowDocument normalizeEpubFlow(
   if (body == null) {
     return const EpubFlowDocument(blocks: [], textLength: 0, mediaCount: 0);
   }
+  final footnotes = _extractFootnotes(body);
   final builder = _FlowBuilder(
     resolveLink: resolveLink,
     resolveResource: resolveResource,
+    footnotes: footnotes,
   );
   for (final node in body.nodes) {
     builder.walk(node);
@@ -81,7 +83,11 @@ EpubFlowDocument normalizeEpubFlow(
 }
 
 class _FlowBuilder {
-  _FlowBuilder({required this.resolveLink, required this.resolveResource});
+  _FlowBuilder({
+    required this.resolveLink,
+    required this.resolveResource,
+    required this.footnotes,
+  });
 
   static const _ignoredTags = {'script', 'style', 'noscript', 'template'};
   static const _headingTags = {'h1', 'h2', 'h3', 'h4', 'h5', 'h6'};
@@ -127,6 +133,7 @@ class _FlowBuilder {
 
   final EpubHrefResolver resolveLink;
   final EpubHrefResolver resolveResource;
+  final Map<String, String> footnotes;
   final List<String> blocks = [];
   var textLength = 0;
   var mediaCount = 0;
@@ -144,6 +151,9 @@ class _FlowBuilder {
     }
     final tag = node.localName?.toLowerCase() ?? '';
     if (_ignoredTags.contains(tag)) {
+      return;
+    }
+    if (_isFootnoteContainer(node)) {
       return;
     }
     if (_headingTags.contains(tag)) {
@@ -299,6 +309,9 @@ class _FlowBuilder {
     if (_ignoredTags.contains(tag)) {
       return '';
     }
+    if (_isFootnoteContainer(node)) {
+      return '';
+    }
     if (tag == 'img' || tag == 'svg') {
       if (_isAnnotationMarkerMedia(node)) {
         return '';
@@ -311,6 +324,17 @@ class _FlowBuilder {
     final children = node.nodes.map(_inlineHtml).join();
     if (tag == 'a') {
       final rawHref = node.attributes['href'];
+      final footnoteId = _footnoteIdFromHref(rawHref);
+      final footnoteText = footnoteId == null ? null : footnotes[footnoteId];
+      if (footnoteText != null && footnoteText.isNotEmpty) {
+        final href = rawHref == null || rawHref.isEmpty
+            ? ''
+            : ' href="${_attributeEscape.convert(resolveLink(rawHref))}"';
+        return '<a class="sq-footnote-ref"$href '
+            'data-footnote-id="${_attributeEscape.convert(footnoteId!)}" '
+            'data-footnote="${_attributeEscape.convert(footnoteText)}">'
+            '\u6ce8</a>';
+      }
       final href = rawHref == null || rawHref.isEmpty
           ? ''
           : ' href="${_attributeEscape.convert(resolveLink(rawHref))}"';
@@ -409,14 +433,17 @@ class _FlowBuilder {
     if (tag != 'img' && tag != 'svg') {
       return false;
     }
+    final mediaHref =
+        element.attributes['src'] ??
+        element.attributes['href'] ??
+        element.attributes['xlink:href'] ??
+        '';
     final source = [
-      element.attributes['src'],
+      mediaHref,
       element.attributes['alt'],
       element.attributes['title'],
       element.attributes['class'],
       element.attributes['id'],
-      element.attributes['href'],
-      element.attributes['xlink:href'],
     ].whereType<String>().join(' ').toLowerCase();
     final parentText = [
       element.parent?.attributes['class'],
@@ -444,7 +471,9 @@ class _FlowBuilder {
     final effectiveWidth = width ?? styleWidth;
     final effectiveHeight = height ?? styleHeight;
     if (effectiveWidth == null || effectiveHeight == null) {
-      return false;
+      return RegExp(
+        r'(^|/)(note|footnote|noteref|marker)\.(png|jpe?g|gif|webp|svg)$',
+      ).hasMatch(mediaHref.toLowerCase());
     }
     return effectiveWidth <= 96 && effectiveHeight <= 96;
   }
@@ -466,6 +495,81 @@ class _FlowBuilder {
     ).firstMatch(style);
     return double.tryParse(match?.group(1) ?? '');
   }
+}
+
+Map<String, String> _extractFootnotes(dom.Element body) {
+  final result = <String, String>{};
+  for (final element in body.querySelectorAll('[id], [name]')) {
+    if (!_isFootnoteContainer(element)) {
+      continue;
+    }
+    final id = element.attributes['id'] ?? element.attributes['name'];
+    if (id == null || id.isEmpty || result.containsKey(id)) {
+      continue;
+    }
+    final text = _cleanText(_footnoteReadableText(element));
+    if (text.isNotEmpty) {
+      result[id] = text;
+    }
+  }
+  return result;
+}
+
+String _footnoteReadableText(dom.Node node) {
+  if (node is dom.Text) {
+    return node.data;
+  }
+  if (node is! dom.Element) {
+    return '';
+  }
+  final tag = node.localName?.toLowerCase() ?? '';
+  if (const {'script', 'style', 'noscript', 'template'}.contains(tag)) {
+    return '';
+  }
+  if (tag == 'a') {
+    final href = node.attributes['href'] ?? '';
+    if (href.startsWith('#') && _cleanText(node.text).isEmpty) {
+      return '';
+    }
+  }
+  if (tag == 'br') {
+    return '\n';
+  }
+  return node.nodes.map(_footnoteReadableText).join(' ');
+}
+
+bool _isFootnoteContainer(dom.Element element) {
+  final tag = element.localName?.toLowerCase() ?? '';
+  final epubType = [
+    element.attributes['epub:type'],
+    element.attributes['type'],
+    element.attributes['role'],
+  ].whereType<String>().join(' ').toLowerCase();
+  if (epubType.contains('noteref')) {
+    return false;
+  }
+  final marker = [
+    tag,
+    epubType,
+    element.attributes['class'],
+    element.attributes['id'],
+  ].whereType<String>().join(' ').toLowerCase();
+  return tag == 'aside' && marker.contains('footnote') ||
+      marker.contains('duokan-footnote-content') ||
+      marker.contains('duokan-footnote-item') ||
+      marker.contains('endnote') ||
+      marker.contains('sq-footnote-body');
+}
+
+String? _footnoteIdFromHref(String? href) {
+  if (href == null || href.isEmpty) {
+    return null;
+  }
+  final hash = href.lastIndexOf('#');
+  if (hash < 0 || hash == href.length - 1) {
+    return null;
+  }
+  return href.substring(hash + 1);
 }
 
 String _cleanText(String input, {bool preserveLines = false}) {
