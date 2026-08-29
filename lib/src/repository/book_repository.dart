@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:gbk_codec/gbk_codec.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:path/path.dart' as path;
@@ -532,7 +533,15 @@ class BookRepository {
   }
 
   Future<void> clearCache() async {
-    // 1. Clear temporary cache directory
+    // 1. Clear InAppWebView disk and memory caches
+    try {
+      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+        await InAppWebViewController.clearAllCache(includeDiskFiles: true);
+        await WebStorageManager.instance().deleteAllData();
+      }
+    } catch (_) {}
+
+    // 2. Clear temporary cache directory
     try {
       final tempDir = await getTemporaryDirectory();
       if (await tempDir.exists()) {
@@ -544,7 +553,7 @@ class BookRepository {
       }
     } catch (_) {}
 
-    // 2. Clean all redundant epub files and duplicate archives in books/
+    // 3. Clean all redundant epub files and duplicate archives in books/
     try {
       final root = await _rootDir();
       final booksDir = Directory(path.join(root.path, 'books'));

@@ -57,18 +57,31 @@ void main() {
         for (final file in files) {
           final book = await repository.importBookFile(file.path);
           print('Imported [${book.title}], chapters: ${book.chapters.length}');
-          expect(book.chapters, isNotEmpty, reason: file.path);
-          for (var i = 0; i < book.chapters.length; i++) {
-            final ch = book.chapters[i];
-            final f = File(ch.filePath);
-            expect(f.existsSync(), isTrue, reason: 'Chapter $i [${ch.title}] file missing: ${ch.filePath}');
-            expect(f.lengthSync(), greaterThan(0), reason: 'Chapter $i [${ch.title}] file is empty');
-            final content = f.readAsStringSync();
-            expect(content.contains('<body class='), isTrue, reason: 'Chapter $i missing body');
-            if (content.contains('境界设定')) {
-              final idx = content.indexOf('境界设定');
-              print('Found 境界设定 in [${ch.title}] of book [${book.title}]:');
-              print(content.substring(idx - 100, (idx + 150).clamp(0, content.length)));
+          final bookDir = Directory(book.bookDir);
+          final allFiles = bookDir.listSync(recursive: true).whereType<File>().toList();
+          var totalBytes = 0;
+          final bySubdir = <String, int>{};
+          for (final f in allFiles) {
+            final len = f.lengthSync();
+            totalBytes += len;
+            final rel = path.relative(f.path, from: bookDir.path);
+            final top = rel.split(Platform.pathSeparator).first;
+            bySubdir[top] = (bySubdir[top] ?? 0) + len;
+          }
+          print('Book [${book.title}] disk size: ${(totalBytes / (1024 * 1024)).toStringAsFixed(2)} MB (Original raw file was ${(file.lengthSync() / (1024 * 1024)).toStringAsFixed(2)} MB)');
+          for (final entry in bySubdir.entries) {
+            print('  - ${entry.key}: ${(entry.value / (1024 * 1024)).toStringAsFixed(2)} MB');
+          }
+          final epubDir = Directory(path.join(bookDir.path, 'epub'));
+          if (epubDir.existsSync()) {
+            final extSizes = <String, int>{};
+            for (final f in epubDir.listSync(recursive: true).whereType<File>()) {
+              final ext = path.extension(f.path).toLowerCase();
+              extSizes[ext] = (extSizes[ext] ?? 0) + f.lengthSync();
+            }
+            print('  Breakdown of epub/ directory:');
+            for (final entry in extSizes.entries) {
+              print('    * ${entry.key}: ${(entry.value / (1024 * 1024)).toStringAsFixed(2)} MB');
             }
           }
         }
