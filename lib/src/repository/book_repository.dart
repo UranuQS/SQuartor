@@ -422,10 +422,20 @@ class BookRepository {
       if (!file.isFile) {
         continue;
       }
-      final safePath = EpubParser.safeJoin(extractDir.path, file.name);
-      final output = File(safePath);
-      await output.parent.create(recursive: true);
-      await output.writeAsBytes(file.content as List<int>, flush: false);
+      try {
+        final safePath = EpubParser.safeJoin(extractDir.path, file.name);
+        final output = File(safePath);
+        await output.parent.create(recursive: true);
+        await output.writeAsBytes(file.content as List<int>, flush: false);
+      } catch (e) {
+        try {
+          final sanitizedName = file.name.replaceAll(RegExp(r'[:*?"<>|]'), '_');
+          final safePath = EpubParser.safeJoin(extractDir.path, sanitizedName);
+          final output = File(safePath);
+          await output.parent.create(recursive: true);
+          await output.writeAsBytes(file.content as List<int>, flush: false);
+        } catch (_) {}
+      }
     }
 
     final meta = await EpubParser.parseEpub(

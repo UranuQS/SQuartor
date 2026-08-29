@@ -23,10 +23,18 @@ void main() {
   test(
     'imports local regression EPUB files when available',
     () async {
-      final files = [
-        File(r'C:\Users\UranuQS\Desktop\多看全屏版 凡人修仙传合集 校对全.epub'),
-        File(r'C:\Users\UranuQS\Desktop\败北女角太多了！01.epub'),
-      ].where((file) => file.existsSync()).toList();
+      final desktop = Directory(r'C:\Users\UranuQS\Desktop');
+      final files = (desktop.existsSync()
+              ? desktop
+                  .listSync()
+                  .whereType<File>()
+                  .where((f) => f.path.toLowerCase().endsWith('.epub'))
+                  .toList()
+              : <File>[]);
+      print('Found ${files.length} desktop EPUBs to test:');
+      for (final f in files) {
+        print('  - ${f.path}');
+      }
       if (files.isEmpty) {
         return;
       }
@@ -38,7 +46,9 @@ void main() {
       try {
         final repository = BookRepository();
         for (final file in files) {
+          print('Parsing ${file.path}...');
           final book = await repository.importBookFile(file.path);
+          print('Book title: ${book.title}, author: ${book.author}, chapters: ${book.chapters.length}');
           expect(book.chapters, isNotEmpty, reason: file.path);
           if (file.path.contains('败北女角')) {
             final generatedHtml = Directory(book.bookDir)

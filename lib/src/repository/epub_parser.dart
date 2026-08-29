@@ -514,7 +514,33 @@ class EpubParser {
       href,
       full: true,
     ).replaceAll('\\', '/');
-    return path.posix.normalize(decoded).replaceFirst(RegExp(r'^\./'), '');
+    final normalized =
+        path.posix.normalize(decoded).replaceFirst(RegExp(r'^\./'), '');
+    final segments = normalized.split('/').map(_sanitizeEpubPathSegment).join('/');
+    return segments;
+  }
+
+  static String _sanitizeEpubPathSegment(String segment) {
+    if (segment == '.' || segment == '..') {
+      return segment;
+    }
+    final buffer = StringBuffer();
+    for (final rune in segment.runes) {
+      if (rune == 0x3A || // :
+          rune == 0x2A || // *
+          rune == 0x3F || // ?
+          rune == 0x22 || // "
+          rune == 0x3C || // <
+          rune == 0x3E || // >
+          rune == 0x7C || // |
+          rune < 0x20 || // control chars
+          rune == 0x7F) { // DEL
+        buffer.write('%${rune.toRadixString(16).toUpperCase().padLeft(2, '0')}');
+      } else {
+        buffer.writeCharCode(rune);
+      }
+    }
+    return buffer.toString();
   }
 
   static String resolveEpubHref(String baseHref, String href) {

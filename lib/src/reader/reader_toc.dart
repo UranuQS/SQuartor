@@ -43,7 +43,7 @@ class _ReaderTocDrawerState extends State<ReaderTocDrawer> {
   late final ScrollController _scrollController;
   late Set<int> _expanded;
   final _headerKey = GlobalKey();
-  var _headerHeight = 0.0;
+  var _headerHeight = 108.0;
   List<int>? _cachedVisibleIndices;
   List<BookBookmark>? _cachedBookmarks;
 
@@ -56,6 +56,7 @@ class _ReaderTocDrawerState extends State<ReaderTocDrawer> {
       keepScrollOffset: false,
     );
     _scheduleTocPosition();
+    _scheduleHeaderMeasurement();
   }
 
   double _initialTocScrollOffset() {
@@ -114,6 +115,7 @@ class _ReaderTocDrawerState extends State<ReaderTocDrawer> {
     }
     if (changedTarget || switchedToToc) {
       _scheduleTocPosition();
+      _scheduleHeaderMeasurement();
     }
   }
 
@@ -198,7 +200,6 @@ class _ReaderTocDrawerState extends State<ReaderTocDrawer> {
     final panelTitle = widget.showBookmarks ? '书签' : '目录';
     final chapterLabel =
         '第 ${widget.chapterIndex + 1} / ${widget.book.chapters.length} 章';
-    _scheduleHeaderMeasurement();
     return Material(
       color: Colors.transparent,
       elevation: 0,
@@ -323,27 +324,25 @@ class _ReaderTocHeader extends StatelessWidget {
     final accent = glass.dark ? palette.primarySoft : palette.primary;
     return ClipRRect(
       borderRadius: BorderRadius.circular(30),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: glass.pill.withValues(alpha: glass.dark ? .34 : .38),
-            borderRadius: BorderRadius.circular(30),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.white.withValues(alpha: glass.dark ? .03 : .16),
-                blurRadius: 18,
-                offset: const Offset(0, -6),
-              ),
-              BoxShadow(
-                color: Colors.black.withValues(alpha: glass.dark ? .10 : .05),
-                blurRadius: 24,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 13),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: glass.pill.withValues(alpha: glass.dark ? .82 : .88),
+          borderRadius: BorderRadius.circular(30),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.white.withValues(alpha: glass.dark ? .03 : .16),
+              blurRadius: 18,
+              offset: const Offset(0, -6),
+            ),
+            BoxShadow(
+              color: Colors.black.withValues(alpha: glass.dark ? .10 : .05),
+              blurRadius: 24,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 13),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -401,8 +400,7 @@ class _ReaderTocHeader extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 }
 

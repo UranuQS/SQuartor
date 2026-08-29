@@ -3,15 +3,17 @@ import 'reader_state_fields.dart';
 mixin ReaderTimeMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
   @override
   void flushReadingTime() {
-    if (!readingStopwatch.isRunning) {
+    final rawSeconds = readingStopwatch.elapsed.inSeconds;
+    if (rawSeconds < 5) {
       return;
     }
-    final seconds = readingStopwatch.elapsed.inSeconds;
-    if (seconds >= 5) {
-      appState.addReadingSeconds(seconds, book.id);
-      readingStopwatch
-        ..reset()
-        ..start();
+    final isRunning = readingStopwatch.isRunning;
+    readingStopwatch.reset();
+    if (isRunning) {
+      readingStopwatch.start();
     }
+    // Cap any single batch to 180s to prevent runaway accumulation during sleep/suspension
+    final seconds = rawSeconds.clamp(5, 180);
+    appState.addReadingSeconds(seconds, book.id);
   }
 }

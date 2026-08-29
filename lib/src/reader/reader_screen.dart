@@ -45,6 +45,7 @@ class ReaderScreen extends StatefulWidget implements ReaderScreenWidget {
 class ReaderScreenState extends State<ReaderScreen>
     with
         TickerProviderStateMixin,
+        WidgetsBindingObserver,
         ReaderStateFields<ReaderScreen>,
         ReaderEpubMixin<ReaderScreen>,
         ReaderTxtMixin<ReaderScreen>,
@@ -221,6 +222,7 @@ class ReaderScreenState extends State<ReaderScreen>
     pendingExactPageCount = savedPageCount;
     pendingPageProgress = savedPageCount <= 1 ? 0 : page / (savedPageCount - 1);
     widget.state.settingsChanges.addListener(onReaderStyleChanged);
+    WidgetsBinding.instance.addObserver(this);
     readingStopwatch.start();
     readingTimer = Timer.periodic(
       const Duration(seconds: 30),
@@ -229,7 +231,29 @@ class ReaderScreenState extends State<ReaderScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    switch (state) {
+      case AppLifecycleState.resumed:
+        if (!readingStopwatch.isRunning) {
+          readingStopwatch.reset();
+          readingStopwatch.start();
+        }
+        break;
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        flushReadingTime();
+        readingStopwatch.stop();
+        readingStopwatch.reset();
+        break;
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _restoreSystemUi();
     flushReadingTime();
     // Flush current reading position to disk immediately so progress is
@@ -656,29 +680,24 @@ class ReaderScreenState extends State<ReaderScreen>
                               .toDouble();
                           final tocBookmarkPanelTravel =
                               panelWidth + tocBookmarkPanelGap;
-                          Widget buildTocSlidingPage({
-                            required bool showBookmarks,
-                            required double offsetX,
-                            required double currentPos,
-                          }) {
-                            final pagePosition = showBookmarks ? 1.0 : 0.0;
-                            return Transform.translate(
-                              offset: Offset(offsetX, 0),
-                              child: IgnorePointer(
-                                ignoring:
-                                    (currentPos - pagePosition).abs() > .55,
-                                child: RepaintBoundary(
-                                  child: SizedBox.expand(
-                                    child: buildTocPanelCard(
-                                      showBookmarks,
-                                      blurSigma: 0,
-                                      transparent: true,
-                                    ),
-                                  ),
-                                ),
+                          final tocCard = RepaintBoundary(
+                            child: SizedBox.expand(
+                              child: buildTocPanelCard(
+                                false,
+                                blurSigma: 0,
+                                transparent: true,
                               ),
-                            );
-                          }
+                            ),
+                          );
+                          final bookmarkCard = RepaintBoundary(
+                            child: SizedBox.expand(
+                              child: buildTocPanelCard(
+                                true,
+                                blurSigma: 0,
+                                transparent: true,
+                              ),
+                            ),
+                          );
 
                           return AnimatedBuilder(
                             animation: tocAnimation,
@@ -722,19 +741,27 @@ class ReaderScreenState extends State<ReaderScreen>
                                               fit: StackFit.expand,
                                               clipBehavior: Clip.hardEdge,
                                               children: [
-                                                buildTocSlidingPage(
-                                                  showBookmarks: false,
-                                                  offsetX:
-                                                      -pos *
-                                                      tocBookmarkPanelTravel,
-                                                  currentPos: pos,
+                                                Transform.translate(
+                                                  offset: Offset(
+                                                    -pos *
+                                                        tocBookmarkPanelTravel,
+                                                    0,
+                                                  ),
+                                                  child: IgnorePointer(
+                                                    ignoring: pos > .55,
+                                                    child: tocCard,
+                                                  ),
                                                 ),
-                                                buildTocSlidingPage(
-                                                  showBookmarks: true,
-                                                  offsetX:
-                                                      (1 - pos) *
-                                                      tocBookmarkPanelTravel,
-                                                  currentPos: pos,
+                                                Transform.translate(
+                                                  offset: Offset(
+                                                    (1 - pos) *
+                                                        tocBookmarkPanelTravel,
+                                                    0,
+                                                  ),
+                                                  child: IgnorePointer(
+                                                    ignoring: pos < .45,
+                                                    child: bookmarkCard,
+                                                  ),
                                                 ),
                                               ],
                                             ),
@@ -770,8 +797,8 @@ class ReaderScreenState extends State<ReaderScreen>
                                       132)
                                   .clamp(360.0, double.infinity)
                                   .toDouble();
-                          final panelHeight = (availableHeight * .86)
-                              .clamp(420.0, 760.0)
+                          final panelHeight = (availableHeight * .72)
+                              .clamp(390.0, 720.0)
                               .toDouble();
                           return AnimatedBuilder(
                             animation: settingsAnimation,
