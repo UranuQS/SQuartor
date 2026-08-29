@@ -729,9 +729,10 @@ class FlutterTxtBlockView extends StatelessWidget {
           : RichText(
               textScaler: TextScaler.noScaling,
               textAlign:
-                  justifyText && block.kind == FlutterTxtBlockKind.paragraph
-                  ? TextAlign.justify
-                  : TextAlign.start,
+                  block.textAlign ??
+                  (justifyText && block.kind == FlutterTxtBlockKind.paragraph
+                      ? TextAlign.justify
+                      : TextAlign.start),
               strutStyle: _strutStyleFor(
                 block.kind == FlutterTxtBlockKind.title
                     ? titleStyle
@@ -828,7 +829,7 @@ class FlutterTxtBlockView extends StatelessWidget {
               label: segment.text.trim().isEmpty
                   ? '\u6ce8'
                   : segment.text.trim(),
-              color: linkStyle.color ?? paragraphStyle.color ?? Colors.red,
+              color: segment.color ?? linkStyle.color ?? paragraphStyle.color ?? Colors.red,
               onTap: (position) => onFootnoteTap(footnote, position),
             ),
           )
@@ -842,13 +843,40 @@ class FlutterTxtBlockView extends StatelessWidget {
               child: Text(
                 segment.text,
                 textScaler: TextScaler.noScaling,
-                style: linkStyle,
+                style: segment.color != null ? linkStyle.copyWith(color: segment.color) : linkStyle,
               ),
             ),
           )
         else
-          _japaneseAwareSpan(segment.text, paragraphStyle, dimBlock),
+          _styledSegmentSpan(segment, paragraphStyle, dimBlock),
     ];
+  }
+
+  TextSpan _styledSegmentSpan(
+    InlineTextSegment segment,
+    TextStyle baseStyle,
+    bool dim,
+  ) {
+    var style = baseStyle;
+    if (segment.color != null) {
+      style = style.copyWith(color: segment.color);
+    }
+    if (segment.isBold) {
+      style = style.copyWith(
+        fontWeight: FontWeight.bold,
+        fontVariations: const [FontVariation('wght', 700)],
+      );
+    }
+    if (segment.isItalic) {
+      style = style.copyWith(fontStyle: FontStyle.italic);
+    }
+    if (dim && segment.color == null) {
+      final dimStyle = style.copyWith(
+        color: (style.color ?? Colors.black).withValues(alpha: .30),
+      );
+      return TextSpan(text: segment.text, style: dimStyle);
+    }
+    return TextSpan(text: segment.text, style: style);
   }
 
   TextSpan _japaneseAwareSpan(String text, TextStyle baseStyle, bool dim) {
@@ -1306,35 +1334,49 @@ class FlutterTxtDocument {
 enum FlutterDocumentBlockKind { paragraph, image, link }
 
 class FlutterDocumentBlock {
-  const FlutterDocumentBlock.paragraph(this.text)
-    : kind = FlutterDocumentBlockKind.paragraph,
-      imageSource = null,
-      href = null,
-      segments = null;
+  const FlutterDocumentBlock.paragraph(
+    this.text, {
+    this.textAlign,
+    this.forceNoIndent = false,
+  }) : kind = FlutterDocumentBlockKind.paragraph,
+       imageSource = null,
+       href = null,
+       segments = null;
 
   const FlutterDocumentBlock.image(this.imageSource)
     : kind = FlutterDocumentBlockKind.image,
       text = '',
       href = null,
-      segments = null;
+      segments = null,
+      textAlign = null,
+      forceNoIndent = false;
 
-  const FlutterDocumentBlock.link(this.text, this.href)
-    : kind = FlutterDocumentBlockKind.link,
-      imageSource = null,
-      segments = null;
+  const FlutterDocumentBlock.link(
+    this.text,
+    this.href, {
+    this.textAlign,
+    this.forceNoIndent = false,
+  }) : kind = FlutterDocumentBlockKind.link,
+       imageSource = null,
+       segments = null;
 
-  FlutterDocumentBlock.rich(List<InlineTextSegment> segments)
-    : kind = FlutterDocumentBlockKind.paragraph,
-      text = segmentsText(segments),
-      imageSource = null,
-      href = null,
-      segments = mergeInlineSegments(segments);
+  FlutterDocumentBlock.rich(
+    List<InlineTextSegment> segments, {
+    this.textAlign,
+    this.forceNoIndent = false,
+  }) : kind = FlutterDocumentBlockKind.paragraph,
+       text = segmentsText(segments),
+       imageSource = null,
+       href = null,
+       segments = mergeInlineSegments(segments);
 
   final FlutterDocumentBlockKind kind;
   final String text;
   final String? imageSource;
   final String? href;
   final List<InlineTextSegment>? segments;
+  final TextAlign? textAlign;
+  final bool forceNoIndent;
 }
 
 class EpubLinkBlock {
@@ -1366,6 +1408,7 @@ class FlutterTxtBlock {
     this.imageHeight = 0,
     this.href,
     this.segments,
+    this.textAlign,
   });
 
   final String text;
@@ -1376,20 +1419,41 @@ class FlutterTxtBlock {
   final double imageHeight;
   final String? href;
   final List<InlineTextSegment>? segments;
+  final TextAlign? textAlign;
 }
 
 class InlineTextSegment {
-  const InlineTextSegment({required this.text, this.href, this.footnote});
+  const InlineTextSegment({
+    required this.text,
+    this.href,
+    this.footnote,
+    this.color,
+    this.isBold = false,
+    this.isItalic = false,
+  });
 
   final String text;
   final String? href;
   final String? footnote;
+  final Color? color;
+  final bool isBold;
+  final bool isItalic;
 
-  InlineTextSegment copyWith({String? text}) {
+  InlineTextSegment copyWith({
+    String? text,
+    String? href,
+    String? footnote,
+    Color? color,
+    bool? isBold,
+    bool? isItalic,
+  }) {
     return InlineTextSegment(
       text: text ?? this.text,
-      href: href,
-      footnote: footnote,
+      href: href ?? this.href,
+      footnote: footnote ?? this.footnote,
+      color: color ?? this.color,
+      isBold: isBold ?? this.isBold,
+      isItalic: isItalic ?? this.isItalic,
     );
   }
 }
@@ -1407,7 +1471,10 @@ List<InlineTextSegment> mergeInlineSegments(List<InlineTextSegment> segments) {
     final previous = result.isEmpty ? null : result.last;
     if (previous != null &&
         previous.href == segment.href &&
-        previous.footnote == segment.footnote) {
+        previous.footnote == segment.footnote &&
+        previous.color == segment.color &&
+        previous.isBold == segment.isBold &&
+        previous.isItalic == segment.isItalic) {
       result[result.length - 1] = previous.copyWith(
         text: previous.text + segment.text,
       );

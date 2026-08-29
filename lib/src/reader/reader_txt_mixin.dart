@@ -585,8 +585,14 @@ mixin ReaderTxtMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
       var firstFragment = true;
       while (offset < chars.length) {
         ensureSpace(minLineHeight);
+        final isCenteredOrRight = sourceBlock.textAlign == TextAlign.center ||
+            sourceBlock.textAlign == TextAlign.right;
         final indentFirstLine =
-            !isLink && firstFragment && readingStyle.firstLineIndent;
+            !isLink &&
+            firstFragment &&
+            !sourceBlock.forceNoIndent &&
+            !isCenteredOrRight &&
+            readingStyle.firstLineIndent;
         final prefix = indentFirstLine ? '\u3000\u3000' : '';
         final available = (pageHeight - usedHeight).clamp(
           minLineHeight,
@@ -608,6 +614,7 @@ mixin ReaderTxtMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
               bottomSpacing: spacing,
               firstLineIndent: indentFirstLine,
               href: sourceBlock.href,
+              textAlign: sourceBlock.textAlign,
               segments: sliceSegmentsByTextRange(
                 sourceBlock.segments,
                 offset,
@@ -643,6 +650,7 @@ mixin ReaderTxtMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
             bottomSpacing: 0,
             firstLineIndent: indentFirstLine,
             href: sourceBlock.href,
+            textAlign: sourceBlock.textAlign,
             segments: sliceSegmentsByTextRange(
               sourceBlock.segments,
               offset,
@@ -653,11 +661,11 @@ mixin ReaderTxtMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
         );
         offset += fitCount;
         firstFragment = false;
-        finishPage();
       }
     }
+
     finishPage();
-    return pages;
+    return pages.isEmpty ? [FlutterTxtPage.empty()] : pages;
   }
 
   @override
@@ -712,6 +720,8 @@ mixin ReaderTxtMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
       final blockKind = isLink
           ? FlutterTxtBlockKind.link
           : FlutterTxtBlockKind.paragraph;
+      final isCenteredOrRight = sourceBlock.textAlign == TextAlign.center ||
+          sourceBlock.textAlign == TextAlign.right;
       final shouldSplit = sourceBlock.segments == null && text.length > 1200;
       if (!shouldSplit) {
         blocks.add(
@@ -719,9 +729,13 @@ mixin ReaderTxtMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
             text: text,
             kind: blockKind,
             bottomSpacing: paragraphSpacing,
-            firstLineIndent: !isLink && readingStyle.firstLineIndent,
+            firstLineIndent: !isLink &&
+                !sourceBlock.forceNoIndent &&
+                !isCenteredOrRight &&
+                readingStyle.firstLineIndent,
             href: sourceBlock.href,
             segments: sourceBlock.segments,
+            textAlign: sourceBlock.textAlign,
           ),
         );
         continue;

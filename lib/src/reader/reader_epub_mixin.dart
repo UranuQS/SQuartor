@@ -1138,45 +1138,32 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
         : chapter.title.trim());
     final blocks = <FlutterDocumentBlock>[];
     for (final element in visibleElements) {
-      final inlineSegments = extractEpubInlineSegments(element);
-      if (inlineSegments.any((segment) => segment.footnote != null)) {
-        final text = cleanReaderText(segmentsText(inlineSegments));
-        if (text.isNotEmpty) {
-          if (blocks.isEmpty && sameReaderTitle(text, title)) {
-            continue;
-          }
-          blocks.add(FlutterDocumentBlock.rich(inlineSegments));
+      final elementStyle = element.attributes['style'] ?? '';
+      final elementColor = _extractColorFromCss(elementStyle);
+      final textAlign = _extractTextAlignFromCss(elementStyle);
+      final isHeading = isHeadingElement(element);
+      final isCentered = textAlign == TextAlign.center ||
+          textAlign == TextAlign.right ||
+          isHeading;
+
+      final inlineSegments = extractEpubInlineSegments(
+        element,
+        inheritedColor: elementColor,
+        isBold: isHeading,
+      );
+
+      final text = cleanReaderText(segmentsText(inlineSegments));
+      if (text.isNotEmpty) {
+        if (blocks.isEmpty && sameReaderTitle(text, title)) {
+          continue;
         }
-        for (final source in extractEpubImageSources(element)) {
-          blocks.add(FlutterDocumentBlock.image(source));
-        }
-        continue;
-      }
-      final links = extractEpubLinks(element);
-      if (links.isNotEmpty) {
-        final surroundingText = cleanReaderText(
-          extractEpubText(element, skipLinks: true),
+        blocks.add(
+          FlutterDocumentBlock.rich(
+            inlineSegments,
+            textAlign: textAlign,
+            forceNoIndent: isCentered,
+          ),
         );
-        if (surroundingText.isNotEmpty) {
-          if (blocks.isEmpty && sameReaderTitle(surroundingText, title)) {
-            continue;
-          }
-          blocks.add(FlutterDocumentBlock.paragraph(surroundingText));
-        }
-        for (final link in links) {
-          if (blocks.isEmpty && sameReaderTitle(link.text, title)) {
-            continue;
-          }
-          blocks.add(FlutterDocumentBlock.link(link.text, link.href));
-        }
-      } else {
-        final text = cleanReaderText(extractEpubText(element));
-        if (text.isNotEmpty) {
-          if (blocks.isEmpty && sameReaderTitle(text, title)) {
-            continue;
-          }
-          blocks.add(FlutterDocumentBlock.paragraph(text));
-        }
       }
       for (final source in extractEpubImageSources(element)) {
         blocks.add(FlutterDocumentBlock.image(source));
@@ -1188,9 +1175,25 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
     return FlutterTxtDocument(title: title, blocks: blocks);
   }
 
-  List<InlineTextSegment> extractEpubInlineSegments(dom.Node node) {
+  List<InlineTextSegment> extractEpubInlineSegments(
+    dom.Node node, {
+    Color? inheritedColor,
+    bool isBold = false,
+    bool isItalic = false,
+  }) {
     if (node is dom.Text) {
-      return [InlineTextSegment(text: node.data)];
+      final text = node.data;
+      if (text.isEmpty) {
+        return const [];
+      }
+      return [
+        InlineTextSegment(
+          text: text,
+          color: inheritedColor,
+          isBold: isBold,
+          isItalic: isItalic,
+        ),
+      ];
     }
     if (node is! dom.Element) {
       return const [];
@@ -1212,6 +1215,36 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
     if (tag == 'br') {
       return const [InlineTextSegment(text: '\n')];
     }
+
+    var localColor = inheritedColor;
+    final elementStyle = node.attributes['style'] ?? '';
+    final colorFromStyle = _extractColorFromCss(elementStyle);
+    if (colorFromStyle != null) {
+      localColor = colorFromStyle;
+    } else if (tag == 'font') {
+      final fontColor = node.attributes['color'];
+      final parsed = parseCssColor(fontColor);
+      if (parsed != null) {
+        localColor = parsed;
+      }
+    }
+
+    var localBold = isBold;
+    if (const {'b', 'strong', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'}.contains(tag) ||
+        elementStyle.contains('font-weight: bold') ||
+        elementStyle.contains('font-weight: 700') ||
+        elementStyle.contains('font-weight: 800') ||
+        elementStyle.contains('font-weight: 900')) {
+      localBold = true;
+    }
+
+    var localItalic = isItalic;
+    if (const {'i', 'em', 'cite', 'dfn', 'var'}.contains(tag) ||
+        elementStyle.contains('font-style: italic') ||
+        elementStyle.contains('font-style: oblique')) {
+      localItalic = true;
+    }
+
     if (tag == 'a' && node.classes.contains('sq-footnote-ref')) {
       final footnote = node.attributes['data-footnote'];
       if (footnote != null && footnote.trim().isNotEmpty) {
@@ -1222,6 +1255,9 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
                 : cleanReaderText(node.text),
             href: node.attributes['href'],
             footnote: footnote,
+            color: localColor,
+            isBold: localBold,
+            isItalic: localItalic,
           ),
         ];
       }
@@ -1230,10 +1266,27 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
       final href = node.attributes['href'];
       final text = cleanReaderText(extractEpubText(node));
       if (href != null && href.isNotEmpty && text.isNotEmpty) {
-        return [InlineTextSegment(text: text, href: href)];
+        return [
+          InlineTextSegment(
+            text: text,
+            href: href,
+            color: localColor,
+            isBold: localBold,
+            isItalic: localItalic,
+          ),
+        ];
       }
     }
-    return node.nodes.expand(extractEpubInlineSegments).toList();
+    return node.nodes
+        .expand(
+          (child) => extractEpubInlineSegments(
+            child,
+            inheritedColor: localColor,
+            isBold: localBold,
+            isItalic: localItalic,
+          ),
+        )
+        .toList();
   }
 
   List<EpubLinkBlock> extractEpubLinks(dom.Element element) {
@@ -1500,4 +1553,97 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
     final right = normalize(b);
     return left.isNotEmpty && right.isNotEmpty && left == right;
   }
+}
+
+Color? parseCssColor(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return null;
+  var str = raw.trim().toLowerCase();
+
+  if (str.startsWith('#')) {
+    final hex = str.substring(1);
+    if (hex.length == 3) {
+      final r = int.tryParse(hex[0] + hex[0], radix: 16);
+      final g = int.tryParse(hex[1] + hex[1], radix: 16);
+      final b = int.tryParse(hex[2] + hex[2], radix: 16);
+      if (r != null && g != null && b != null) {
+        return Color.fromARGB(255, r, g, b);
+      }
+    } else if (hex.length == 6) {
+      final val = int.tryParse(hex, radix: 16);
+      if (val != null) {
+        return Color(0xFF000000 | val);
+      }
+    } else if (hex.length == 8) {
+      final val = int.tryParse(hex, radix: 16);
+      if (val != null) {
+        return Color(val);
+      }
+    }
+    return null;
+  }
+
+  final rgbMatch = RegExp(
+    r'rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)',
+  ).firstMatch(str);
+  if (rgbMatch != null) {
+    final r = int.tryParse(rgbMatch.group(1)!) ?? 0;
+    final g = int.tryParse(rgbMatch.group(2)!) ?? 0;
+    final b = int.tryParse(rgbMatch.group(3)!) ?? 0;
+    final aStr = rgbMatch.group(4);
+    final a = aStr != null
+        ? ((double.tryParse(aStr) ?? 1.0) * 255).round()
+        : 255;
+    return Color.fromARGB(
+      a.clamp(0, 255),
+      r.clamp(0, 255),
+      g.clamp(0, 255),
+      b.clamp(0, 255),
+    );
+  }
+
+  const namedColors = <String, Color>{
+    'red': Color(0xFFFF0000),
+    'orange': Color(0xFFFFA500),
+    'yellow': Color(0xFFFFFF00),
+    'green': Color(0xFF008000),
+    'blue': Color(0xFF0000FF),
+    'purple': Color(0xFF800080),
+    'gray': Color(0xFF808080),
+    'grey': Color(0xFF808080),
+    'black': Color(0xFF000000),
+    'white': Color(0xFFFFFFFF),
+    'gold': Color(0xFFFFD700),
+    'cyan': Color(0xFF00FFFF),
+    'magenta': Color(0xFFFF00FF),
+    'crimson': Color(0xFFDC143C),
+  };
+  return namedColors[str];
+}
+
+Color? _extractColorFromCss(String style) {
+  if (style.isEmpty) return null;
+  final match = RegExp(
+    r'(?:^|;)\s*color\s*:\s*([^;]+)',
+    caseSensitive: false,
+  ).firstMatch(style);
+  if (match != null) {
+    return parseCssColor(match.group(1));
+  }
+  return null;
+}
+
+TextAlign? _extractTextAlignFromCss(String style) {
+  if (style.isEmpty) return null;
+  final match = RegExp(
+    r'(?:^|;)\s*text-align\s*:\s*([^;]+)',
+    caseSensitive: false,
+  ).firstMatch(style);
+  if (match != null) {
+    final align = match.group(1)?.trim().toLowerCase();
+    if (align == 'center') return TextAlign.center;
+    if (align == 'right') return TextAlign.right;
+    if (align == 'left') return TextAlign.left;
+    if (align == 'justify') return TextAlign.justify;
+  }
+  return null;
 }

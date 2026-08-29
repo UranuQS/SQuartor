@@ -114,4 +114,35 @@ void main() {
     expect(html, isNot(contains('<ol')));
     expect(flow.mediaCount, 0);
   });
+
+  test('resolves CSS classes, tags, and inline styles into element attributes', () {
+    final flow = normalizeEpubFlow(
+      '''
+      <html>
+        <head>
+          <style>
+            div { color: #f07813; text-align: center; }
+            .highlight { color: #ff0000; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <div>境界设定</div>
+          <p class="highlight">重要提示</p>
+          <p><font color="#00b4e8">特殊青色</font></p>
+        </body>
+      </html>
+      ''',
+      resolveLink: sameHref,
+      resolveResource: sameHref,
+    );
+
+    final html = flow.blocks.join();
+    expect(html, contains('color: #f07813'));
+    expect(html, contains('text-align: center'));
+    expect(html, contains('境界设定'));
+    expect(html, contains('color: #ff0000'));
+    expect(html, contains('重要提示'));
+    expect(html, contains('color: #00b4e8'));
+    expect(html, contains('特殊青色'));
+  });
 }
