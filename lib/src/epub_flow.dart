@@ -60,12 +60,19 @@ EpubFlowDocument normalizeEpubFlow(
   String source, {
   required EpubHrefResolver resolveLink,
   required EpubHrefResolver resolveResource,
+  List<String> extraCssSources = const [],
 }) {
   final document = html_parser.parse(source);
   final body = document.body;
   if (body == null) {
     return const EpubFlowDocument(blocks: [], textLength: 0, mediaCount: 0);
   }
+  final inlineStyles = document
+      .querySelectorAll('style')
+      .map((element) => element.text)
+      .toList();
+  final allCss = [...inlineStyles, ...extraCssSources];
+
   final footnotes = _extractFootnotes(body);
   final builder = _FlowBuilder(
     resolveLink: resolveLink,
@@ -75,11 +82,100 @@ EpubFlowDocument normalizeEpubFlow(
   for (final node in body.nodes) {
     builder.walk(node);
   }
+
+  // Extract body/container CSS background images (e.g. volume/character art covers)
+  final bgImage = _extractBackgroundImage(body, allCss);
+  if (bgImage != null && bgImage.isNotEmpty) {
+    final resolvedBg = resolveResource(bgImage);
+    if (resolvedBg.isNotEmpty) {
+      builder.insertCoverImage(resolvedBg);
+    }
+  }
+
   return EpubFlowDocument(
     blocks: builder.blocks,
     textLength: builder.textLength,
     mediaCount: builder.mediaCount,
   );
+}
+
+String? _extractBackgroundImage(dom.Element body, List<String> cssSources) {
+  // 1. Check inline style on body
+  final style = body.attributes['style'] ?? '';
+  final inlineMatch = RegExp(
+    r'background(?:-image)?\s*:\s*[^;}]*url\(\s*[\x27\x22]?([^\x27\x22)]+)[\x27\x22]?\s*\)',
+    caseSensitive: false,
+  ).firstMatch(style);
+  if (inlineMatch != null) {
+    return inlineMatch.group(1)?.trim();
+  }
+
+  // 2. Check body classes, id, or body tag in CSS sources
+  final bodyClasses = body.classes.toList();
+  final bodyId = body.id;
+
+  for (final css in cssSources) {
+    for (final cls in bodyClasses) {
+      final classRegex = RegExp(
+        r'(?:body)?\.' +
+            RegExp.escape(cls) +
+            r'\s*\{[^}]*background(?:-image)?\s*:\s*[^;}]*url\(\s*[\x27\x22]?([^\x27\x22)]+)[\x27\x22]?\s*\)',
+        caseSensitive: false,
+      );
+      final match = classRegex.firstMatch(css);
+      if (match != null) {
+        return match.group(1)?.trim();
+      }
+    }
+    if (bodyId.isNotEmpty) {
+      final idRegex = RegExp(
+        r'#' +
+            RegExp.escape(bodyId) +
+            r'\s*\{[^}]*background(?:-image)?\s*:\s*[^;}]*url\(\s*[\x27\x22]?([^\x27\x22)]+)[\x27\x22]?\s*\)',
+        caseSensitive: false,
+      );
+      final match = idRegex.firstMatch(css);
+      if (match != null) {
+        return match.group(1)?.trim();
+      }
+    }
+    final bodyRegex = RegExp(
+      r'(?:^|\})\s*body\s*\{[^}]*background(?:-image)?\s*:\s*[^;}]*url\(\s*[\x27\x22]?([^\x27\x22)]+)[\x27\x22]?\s*\)',
+      caseSensitive: false,
+    );
+    final match = bodyRegex.firstMatch(css);
+    if (match != null) {
+      return match.group(1)?.trim();
+    }
+  }
+
+  // 3. Check child elements with background classes if no image found yet
+  for (final el in body.children) {
+    final elStyle = el.attributes['style'] ?? '';
+    final elMatch = RegExp(
+      r'background(?:-image)?\s*:\s*[^;}]*url\(\s*[\x27\x22]?([^\x27\x22)]+)[\x27\x22]?\s*\)',
+      caseSensitive: false,
+    ).firstMatch(elStyle);
+    if (elMatch != null) {
+      return elMatch.group(1)?.trim();
+    }
+    for (final cls in el.classes) {
+      for (final css in cssSources) {
+        final classRegex = RegExp(
+          r'\.' +
+              RegExp.escape(cls) +
+              r'\s*\{[^}]*background(?:-image)?\s*:\s*[^;}]*url\(\s*[\x27\x22]?([^\x27\x22)]+)[\x27\x22]?\s*\)',
+          caseSensitive: false,
+        );
+        final match = classRegex.firstMatch(css);
+        if (match != null) {
+          return match.group(1)?.trim();
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 class _FlowBuilder {
@@ -137,6 +233,14 @@ class _FlowBuilder {
   final List<String> blocks = [];
   var textLength = 0;
   var mediaCount = 0;
+
+  void insertCoverImage(String resolvedSrc) {
+    blocks.insert(
+      0,
+      '<figure class="sq-flow-image sq-cover-image"><img src="${_attributeEscape.convert(resolvedSrc)}" alt="" /></figure>',
+    );
+    mediaCount += 1;
+  }
 
   void walk(dom.Node node) {
     if (node is dom.Text) {

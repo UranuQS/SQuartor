@@ -1,6 +1,8 @@
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as path;
 // ignore: depend_on_referenced_packages
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 // ignore: depend_on_referenced_packages
@@ -46,10 +48,25 @@ void main() {
       try {
         final repository = BookRepository();
         for (final file in files) {
-          print('Parsing ${file.path}...');
           final book = await repository.importBookFile(file.path);
-          print('Book title: ${book.title}, author: ${book.author}, chapters: ${book.chapters.length}');
           expect(book.chapters, isNotEmpty, reason: file.path);
+          for (var i = 0; i < book.chapters.length; i++) {
+            final ch = book.chapters[i];
+            final f = File(ch.filePath);
+            expect(f.existsSync(), isTrue, reason: 'Chapter $i [${ch.title}] file missing: ${ch.filePath}');
+            expect(f.lengthSync(), greaterThan(0), reason: 'Chapter $i [${ch.title}] file is empty');
+            final content = f.readAsStringSync();
+            expect(content.contains('<body class='), isTrue, reason: 'Chapter $i missing body');
+            expect(
+              content.contains('sq-flow-image') ||
+                  content.contains('sq-title-block') ||
+                  content.contains('<p') ||
+                  content.contains('<h'),
+              isTrue,
+              reason: 'Chapter $i [${ch.title}] has no content elements',
+            );
+          }
+
           if (file.path.contains('败北女角')) {
             final generatedHtml = Directory(book.bookDir)
                 .listSync(recursive: true)

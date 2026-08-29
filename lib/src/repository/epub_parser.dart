@@ -299,8 +299,28 @@ class EpubParser {
       var totalMediaCount = 0;
       for (final item in group.items) {
         final sourceFile = File(safeJoin(extractDir.path, item.fullHref));
+        final rawSource = decodeText(await sourceFile.readAsBytes());
+        final parsedDoc = html_parser.parse(rawSource);
+        final cssSources = <String>[];
+        for (final link in parsedDoc.querySelectorAll(
+          'link[rel*="stylesheet"], link[type*="css"]',
+        )) {
+          final href = link.attributes['href'];
+          if (href != null && href.isNotEmpty) {
+            try {
+              final resolvedCssPath = safeJoin(
+                extractDir.path,
+                resolveEpubHref(path.posix.dirname(item.fullHref), href),
+              );
+              final cssFile = File(resolvedCssPath);
+              if (cssFile.existsSync()) {
+                cssSources.add(decodeText(await cssFile.readAsBytes()));
+              }
+            } catch (_) {}
+          }
+        }
         final flow = normalizeEpubFlow(
-          decodeText(await sourceFile.readAsBytes()),
+          rawSource,
           resolveLink: (href) => readerLinkHref(
             href: href,
             sourceHref: item.fullHref,
@@ -312,6 +332,7 @@ class EpubParser {
             sourceHref: item.fullHref,
             extractDir: extractDir,
           ),
+          extraCssSources: cssSources,
         );
         if (flow.isEmpty) {
           continue;
@@ -320,7 +341,18 @@ class EpubParser {
         totalMediaCount += flow.mediaCount;
         sections.add(flow.renderFlow(item.fullHref));
       }
-      final imageOnly = totalTextLength == 0 && totalMediaCount == 1;
+      if (sections.isEmpty) {
+        // Render standalone title card for volume/divider pages with no body text
+        sections.add(
+          '<span hidden class="sq-spine-marker sq-title-page-marker" '
+          'data-source="${htmlEscape.convert(group.href)}"></span>'
+          '<div class="sq-title-block sq-title-lead">'
+          '<h1>${htmlEscape.convert(group.title)}</h1>'
+          '</div>',
+        );
+        totalTextLength += group.title.length;
+      }
+      final imageOnly = totalTextLength == 0 && totalMediaCount >= 1;
       final html = StringBuffer()
         ..writeln('<!doctype html><html><head><meta charset="utf-8">')
         ..writeln(
