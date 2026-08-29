@@ -294,6 +294,7 @@ class AppState extends ChangeNotifier {
         _style.firstLineIndent == style.firstLineIndent &&
         _style.dimJapaneseText == style.dimJapaneseText &&
         _style.pageTurnAnimation == style.pageTurnAnimation &&
+        _style.fontWeightValue == style.fontWeightValue &&
         _style.fontName == style.fontName &&
         _style.fontPath == style.fontPath &&
         _style.appFontName == style.appFontName &&
@@ -315,6 +316,7 @@ class AppState extends ChangeNotifier {
         _style.pageTurnAnimation != style.pageTurnAnimation;
     final paginationChanged =
         _style.fontSize != style.fontSize ||
+        _style.fontWeightValue != style.fontWeightValue ||
         _style.lineHeight != style.lineHeight ||
         _style.paragraphSpacing != style.paragraphSpacing ||
         _style.letterSpacing != style.letterSpacing ||

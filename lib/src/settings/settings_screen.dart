@@ -279,6 +279,18 @@ class SettingsScreen extends StatelessWidget {
                     state.updateStyle(style.copyWith(fontSize: value)),
               ),
               SliderRow(
+                label: '字重',
+                value: style.fontWeightValue.toDouble(),
+                min: 100,
+                max: 900,
+                divisions: 8,
+                display: style.fontWeightLabel,
+                palette: palette,
+                onChanged: (value) => state.updateStyle(
+                  style.copyWith(fontWeightValue: value.round()),
+                ),
+              ),
+              SliderRow(
                 label: '行高',
                 value: style.lineHeight,
                 min: 1.2,

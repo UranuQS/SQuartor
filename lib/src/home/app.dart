@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 
@@ -88,6 +90,15 @@ class _SQuartorAppState extends State<SQuartorApp> with WidgetsBindingObserver {
               navigatorKey: _navigatorKey,
               title: 'SQuartor',
               debugShowCheckedModeBanner: false,
+              scrollBehavior: const MaterialScrollBehavior().copyWith(
+                dragDevices: {
+                  PointerDeviceKind.touch,
+                  PointerDeviceKind.mouse,
+                  PointerDeviceKind.trackpad,
+                  PointerDeviceKind.stylus,
+                  PointerDeviceKind.unknown,
+                },
+              ),
               theme: ThemeData(
                 useMaterial3: true,
                 brightness: brightness,

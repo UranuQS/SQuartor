@@ -29,11 +29,14 @@ class ReaderSettingsSheet extends StatefulWidget {
 class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
   late ReadingStyle _draft = widget.state.style;
   final _acceptInput = true;
+  final ScrollController _scrollController = ScrollController();
+  final GlobalKey _moreSettingsKey = GlobalKey();
   Timer? _deferredCommitTimer;
 
   @override
   void dispose() {
     _deferredCommitTimer?.cancel();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -52,11 +55,16 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
               ReaderSettingsHeader(glass: glass),
               Expanded(
                 child: ListView(
+                  controller: _scrollController,
+                  primary: false,
+                  physics: const ClampingScrollPhysics(
+                    parent: AlwaysScrollableScrollPhysics(),
+                  ),
                   padding: EdgeInsets.fromLTRB(
                     20,
                     18,
                     20,
-                    22 + MediaQuery.viewInsetsOf(context).bottom,
+                    48 + MediaQuery.viewInsetsOf(context).bottom,
                   ),
                   children: [
                     ReaderSectionLabel(
@@ -84,7 +92,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                         ),
                         const ReaderCardDivider(),
                         SheetSlider(
-                          label: '\u5b57\u53f7',
+                          label: '字号',
                           valueLabel: style.fontSize.toStringAsFixed(0),
                           value: style.fontSize.clamp(14, 32).toDouble(),
                           min: 14,
@@ -93,6 +101,20 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                           palette: palette,
                           onChanged: (value) =>
                               _preview(style.copyWith(fontSize: value)),
+                          onChangeEnd: (_) => _commit(),
+                        ),
+                        const ReaderCardDivider(),
+                        SheetSlider(
+                          label: '字重',
+                          valueLabel: style.fontWeightLabel,
+                          value: style.fontWeightValue.clamp(100, 900).toDouble(),
+                          min: 100,
+                          max: 900,
+                          divisions: 8,
+                          palette: palette,
+                          onChanged: (value) => _preview(
+                            style.copyWith(fontWeightValue: value.round()),
+                          ),
                           onChangeEnd: (_) => _commit(),
                         ),
                         const ReaderCardDivider(),
@@ -164,6 +186,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                     ),
                     const SizedBox(height: 12),
                     ReaderSettingsCard(
+                      key: _moreSettingsKey,
                       glass: glass,
                       padding: EdgeInsets.zero,
                       children: [
@@ -172,6 +195,28 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                             context,
                           ).copyWith(dividerColor: Colors.transparent),
                           child: ExpansionTile(
+                            onExpansionChanged: (expanded) {
+                              if (expanded) {
+                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                                  Future.delayed(
+                                    const Duration(milliseconds: 180),
+                                    () {
+                                      final ctx = _moreSettingsKey.currentContext;
+                                      if (ctx != null && _scrollController.hasClients) {
+                                        Scrollable.ensureVisible(
+                                          ctx,
+                                          duration: const Duration(
+                                            milliseconds: 320,
+                                          ),
+                                          curve: Curves.easeOutCubic,
+                                          alignment: 0.0,
+                                        );
+                                      }
+                                    },
+                                  );
+                                });
+                              }
+                            },
                             tilePadding: const EdgeInsets.fromLTRB(
                               16,
                               4,
@@ -295,6 +340,8 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                                   style.fontName == null
                                       ? '\u5bfc\u5165\u4e66\u7c4d\u5b57\u4f53 .ttf / .otf'
                                       : '\u4e66\u7c4d\u5b57\u4f53\uff1a${style.fontName}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
@@ -318,8 +365,12 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
       return;
     }
     _deferredCommitTimer?.cancel();
-    unawaited(widget.state.updateStyle(style));
-    widget.onChanged();
+    _deferredCommitTimer = Timer(const Duration(milliseconds: 75), () {
+      if (mounted) {
+        unawaited(widget.state.updateStyle(_draft));
+        widget.onChanged();
+      }
+    });
   }
 
   void _commit({Duration delay = Duration.zero}) {
@@ -352,28 +403,28 @@ class ReaderSettingsHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
       child: SizedBox(
         width: double.infinity,
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: glass.pill.withValues(alpha: glass.dark ? .46 : .54),
-            borderRadius: BorderRadius.circular(30),
+            borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
                 color: Colors.white.withValues(alpha: glass.dark ? .035 : .18),
                 blurRadius: 18,
-                offset: const Offset(0, -6),
+                offset: const Offset(0, -4),
               ),
               BoxShadow(
                 color: Colors.black.withValues(alpha: glass.dark ? .12 : .06),
-                blurRadius: 24,
-                offset: const Offset(0, 10),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
               ),
             ],
           ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(22, 22, 22, 21),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -382,19 +433,19 @@ class ReaderSettingsHeader extends StatelessWidget {
                   '版式与背景',
                   style: TextStyle(
                     color: glass.text,
-                    fontSize: 24,
+                    fontSize: 20,
                     height: 1.12,
                     fontWeight: AppTextWeight.semibold,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 Text(
                   '调整阅读方式、字号、间距和纸张',
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: glass.muted,
-                    fontSize: 14,
+                    fontSize: 12,
                     height: 1.25,
                     fontWeight: AppTextWeight.medium,
                   ),
@@ -530,13 +581,15 @@ class ReaderInlineSwitch extends StatelessWidget {
                 ],
               ),
             ),
-            Switch(
-              value: value,
-              activeTrackColor: palette.primary,
-              activeThumbColor: palette.primarySoft,
-              inactiveTrackColor: glass.line.withValues(alpha: .55),
-              inactiveThumbColor: glass.muted,
-              onChanged: onChanged,
+            IgnorePointer(
+              child: Switch(
+                value: value,
+                activeTrackColor: palette.primary,
+                activeThumbColor: palette.primarySoft,
+                inactiveTrackColor: glass.line.withValues(alpha: .55),
+                inactiveThumbColor: glass.muted,
+                onChanged: null,
+              ),
             ),
           ],
         ),

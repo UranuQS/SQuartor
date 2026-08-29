@@ -321,122 +321,125 @@ class ReaderScreenState extends State<ReaderScreen>
                           ? MissingChapter(readerPalette: readerPalette)
                           : Opacity(
                               opacity: readerSnapshotImage != null ? 0 : 1,
-                              child: InAppWebView(
-                                key: ValueKey('reader-${book.id}'),
-                                initialUrlRequest: URLRequest(
-                                  url: WebUri.uri(File(chapter.filePath).uri),
-                                ),
-                                initialSettings: InAppWebViewSettings(
-                                  javaScriptEnabled: true,
-                                  transparentBackground: false,
-                                  useHybridComposition: true,
-                                  useShouldOverrideUrlLoading: true,
-                                  allowFileAccess: true,
-                                  allowFileAccessFromFileURLs: true,
-                                  allowUniversalAccessFromFileURLs: true,
-                                  disableVerticalScroll: false,
-                                  disableHorizontalScroll: true,
-                                  supportZoom: false,
-                                ),
-                                onWebViewCreated: (ctrl) {
-                                  readerLog(
-                                    'webview created chapter=$chapterIndex file=${chapter.filePath}',
-                                  );
-                                  controller = ctrl;
-                                  ctrl.addJavaScriptHandler(
-                                    handlerName: 'squartorEvent',
-                                    callback: handleReaderEvent,
-                                  );
-                                },
-                                onLoadStop: (ctrl, url) async {
-                                  readerLog('webview loadStop url=$url');
-                                  if (url == null || !url.isScheme('file')) {
-                                    return;
-                                  }
-                                  final loadedPath = path.normalize(
-                                    url.uriValue.toFilePath(),
-                                  );
-                                  final currentChapterPath = path.normalize(
-                                    currentChapter.filePath,
-                                  );
-                                  if (loadedPath != currentChapterPath) {
+                              child: IgnorePointer(
+                                ignoring: overlay != ReaderOverlay.hidden,
+                                child: InAppWebView(
+                                  key: ValueKey('reader-${book.id}'),
+                                  initialUrlRequest: URLRequest(
+                                    url: WebUri.uri(File(chapter.filePath).uri),
+                                  ),
+                                  initialSettings: InAppWebViewSettings(
+                                    javaScriptEnabled: true,
+                                    transparentBackground: false,
+                                    useHybridComposition: true,
+                                    useShouldOverrideUrlLoading: true,
+                                    allowFileAccess: true,
+                                    allowFileAccessFromFileURLs: true,
+                                    allowUniversalAccessFromFileURLs: true,
+                                    disableVerticalScroll: false,
+                                    disableHorizontalScroll: true,
+                                    supportZoom: false,
+                                  ),
+                                  onWebViewCreated: (ctrl) {
                                     readerLog(
-                                      'drop stale webview loadStop loaded=$loadedPath current=$currentChapterPath',
+                                      'webview created chapter=$chapterIndex file=${chapter.filePath}',
                                     );
-                                    return;
-                                  }
-                                  if (pendingWebLoadPath != null &&
-                                      pendingWebLoadPath != loadedPath) {
-                                    readerLog(
-                                      'drop unexpected webview loadStop loaded=$loadedPath pending=$pendingWebLoadPath',
+                                    controller = ctrl;
+                                    ctrl.addJavaScriptHandler(
+                                      handlerName: 'squartorEvent',
+                                      callback: handleReaderEvent,
                                     );
-                                    return;
-                                  }
-                                  if (url.fragment.isNotEmpty == true) {
-                                    pendingAnchor = decodeLooseUriComponent(
-                                      url.fragment,
+                                  },
+                                  onLoadStop: (ctrl, url) async {
+                                    readerLog('webview loadStop url=$url');
+                                    if (url == null || !url.isScheme('file')) {
+                                      return;
+                                    }
+                                    final loadedPath = path.normalize(
+                                      url.uriValue.toFilePath(),
                                     );
-                                  }
-                                  try {
-                                    await injectReaderStyle();
-                                  } catch (error) {
-                                    readerLog('inject failed $error');
-                                    debugPrint(
-                                      'SQuartor inject style failed: $error',
+                                    final currentChapterPath = path.normalize(
+                                      currentChapter.filePath,
                                     );
-                                  }
-                                  if (mounted) {
-                                    setState(() {
-                                      pendingWebLoadPath = null;
-                                      isLoading = false;
-                                      loadError = null;
-                                    });
-                                    flushPendingProgressSeek();
-                                  }
-                                },
-                                onReceivedError: (ctrl, request, error) {
-                                  readerLog(
-                                    'webview error main=${request.isForMainFrame} ${error.description}',
-                                  );
-                                  if (request.isForMainFrame == true &&
-                                      mounted) {
-                                    setState(() {
-                                      isLoading = false;
-                                      loadError = error.description;
-                                      overlay = ReaderOverlay.chrome;
-                                    });
-                                  }
-                                },
-                                onConsoleMessage: (ctrl, message) {
-                                  debugPrint(
-                                    'SQuartor WebView: ${message.message}',
-                                  );
-                                },
-                                shouldOverrideUrlLoading: (ctrl, action) async {
-                                  final url = action.request.url;
-                                  if (url == null) {
-                                    return NavigationActionPolicy.ALLOW;
-                                  }
-                                  if (isExternalUriString(url.toString())) {
-                                    unawaited(
-                                      openExternalLink(
-                                        Uri.parse(url.toString()),
-                                      ),
-                                    );
-                                    if (context.mounted &&
-                                        !isExternalUriString(url.toString())) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('外部链接第一版先不打开'),
-                                        ),
+                                    if (loadedPath != currentChapterPath) {
+                                      readerLog(
+                                        'drop stale webview loadStop loaded=$loadedPath current=$currentChapterPath',
+                                      );
+                                      return;
+                                    }
+                                    if (pendingWebLoadPath != null &&
+                                        pendingWebLoadPath != loadedPath) {
+                                      readerLog(
+                                        'drop unexpected webview loadStop loaded=$loadedPath pending=$pendingWebLoadPath',
+                                      );
+                                      return;
+                                    }
+                                    if (url.fragment.isNotEmpty == true) {
+                                      pendingAnchor = decodeLooseUriComponent(
+                                        url.fragment,
                                       );
                                     }
-                                    return NavigationActionPolicy.CANCEL;
-                                  }
-                                  return NavigationActionPolicy.ALLOW;
-                                },
+                                    try {
+                                      await injectReaderStyle();
+                                    } catch (error) {
+                                      readerLog('inject failed $error');
+                                      debugPrint(
+                                        'SQuartor inject style failed: $error',
+                                      );
+                                    }
+                                    if (mounted) {
+                                      setState(() {
+                                        pendingWebLoadPath = null;
+                                        isLoading = false;
+                                        loadError = null;
+                                      });
+                                      flushPendingProgressSeek();
+                                    }
+                                  },
+                                  onReceivedError: (ctrl, request, error) {
+                                    readerLog(
+                                      'webview error main=${request.isForMainFrame} ${error.description}',
+                                    );
+                                    if (request.isForMainFrame == true &&
+                                        mounted) {
+                                      setState(() {
+                                        isLoading = false;
+                                        loadError = error.description;
+                                        overlay = ReaderOverlay.chrome;
+                                      });
+                                    }
+                                  },
+                                  onConsoleMessage: (ctrl, message) {
+                                    debugPrint(
+                                      'SQuartor WebView: ${message.message}',
+                                    );
+                                  },
+                                  shouldOverrideUrlLoading: (ctrl, action) async {
+                                    final url = action.request.url;
+                                    if (url == null) {
+                                      return NavigationActionPolicy.ALLOW;
+                                    }
+                                    if (isExternalUriString(url.toString())) {
+                                      unawaited(
+                                        openExternalLink(
+                                          Uri.parse(url.toString()),
+                                        ),
+                                      );
+                                      if (context.mounted &&
+                                          !isExternalUriString(url.toString())) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('外部链接第一版先不打开'),
+                                          ),
+                                        );
+                                      }
+                                      return NavigationActionPolicy.CANCEL;
+                                    }
+                                    return NavigationActionPolicy.ALLOW;
+                                  },
+                                ),
                               ),
                             ),
                     ),
@@ -460,21 +463,24 @@ class ReaderScreenState extends State<ReaderScreen>
                     ),
                   if (!usesFlutterTxt)
                     Positioned.fill(
-                      child: GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onTapUp: onReaderTap,
-                        onLongPressStart: onReaderLongPress,
-                        onVerticalDragStart: (details) => onBookmarkPullStart(
-                          details,
-                          MediaQuery.sizeOf(context),
+                      child: IgnorePointer(
+                        ignoring: overlay != ReaderOverlay.hidden,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onTapUp: onReaderTap,
+                          onLongPressStart: onReaderLongPress,
+                          onVerticalDragStart: (details) => onBookmarkPullStart(
+                            details,
+                            MediaQuery.sizeOf(context),
+                          ),
+                          onVerticalDragUpdate: onBookmarkPullUpdate,
+                          onVerticalDragEnd: onBookmarkPullEnd,
+                          onVerticalDragCancel: onBookmarkPullCancel,
+                          onHorizontalDragStart: onReaderDragStart,
+                          onHorizontalDragUpdate: onReaderDragUpdate,
+                          onHorizontalDragEnd: onReaderDragEnd,
+                          onHorizontalDragCancel: onReaderDragCancel,
                         ),
-                        onVerticalDragUpdate: onBookmarkPullUpdate,
-                        onVerticalDragEnd: onBookmarkPullEnd,
-                        onVerticalDragCancel: onBookmarkPullCancel,
-                        onHorizontalDragStart: onReaderDragStart,
-                        onHorizontalDragUpdate: onReaderDragUpdate,
-                        onHorizontalDragEnd: onReaderDragEnd,
-                        onHorizontalDragCancel: onReaderDragCancel,
                       ),
                     ),
                   if (isLoading)
@@ -764,8 +770,8 @@ class ReaderScreenState extends State<ReaderScreen>
                                       132)
                                   .clamp(360.0, double.infinity)
                                   .toDouble();
-                          final panelHeight = (availableHeight * .72)
-                              .clamp(390.0, 720.0)
+                          final panelHeight = (availableHeight * .86)
+                              .clamp(420.0, 760.0)
                               .toDouble();
                           return AnimatedBuilder(
                             animation: settingsAnimation,
@@ -796,12 +802,16 @@ class ReaderScreenState extends State<ReaderScreen>
                                   width: panelWidth,
                                   height: panelHeight,
                                   child: RepaintBoundary(
-                                    child: FloatingPanelSurface(
-                                      palette: appPalette,
-                                      blurSigma: 12,
-                                      child: ReaderSettingsSheet(
-                                        state: widget.state,
-                                        onChanged: scheduleStyleInjection,
+                                    child: Listener(
+                                      behavior: HitTestBehavior.opaque,
+                                      onPointerSignal: (_) {},
+                                      child: FloatingPanelSurface(
+                                        palette: appPalette,
+                                        blurSigma: 12,
+                                        child: ReaderSettingsSheet(
+                                          state: widget.state,
+                                          onChanged: scheduleStyleInjection,
+                                        ),
                                       ),
                                     ),
                                   ),

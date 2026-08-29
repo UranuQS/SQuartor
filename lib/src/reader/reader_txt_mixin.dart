@@ -465,7 +465,7 @@ mixin ReaderTxtMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
       height: readingStyle.lineHeight,
       letterSpacing: readingStyle.letterSpacing,
       color: readerPalette.text,
-      fontWeight: AppTextWeight.regular,
+      fontWeight: readingStyle.fontWeight,
     );
     final titleStyle = TextStyle(
       fontFamily: fontFamily,

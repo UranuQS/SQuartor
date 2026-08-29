@@ -26,100 +26,15 @@ mixin ReaderOverlayMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
 
   @override
   Future<void> freezeReaderForSideOverlay(int serial) async {
-    if (usesFlutterTxt || usesVerticalScroll) {
-      return;
-    }
-    if (readerSnapshotImage != null || isLoading) {
-      return;
-    }
-    final ctrl = controller;
-    if (ctrl == null) {
-      return;
-    }
-    try {
-      final bytes = await ctrl.takeScreenshot(
-        screenshotConfiguration: ScreenshotConfiguration(
-          snapshotWidth: MediaQuery.sizeOf(context).width,
-          compressFormat: CompressFormat.PNG,
-          quality: 100,
-        ),
-      );
-      if (!mounted ||
-          serial != overlayTransitionSerial ||
-          bytes == null ||
-          bytes.isEmpty) {
-        return;
-      }
-      final image = MemoryImage(bytes);
-      await precacheImage(image, context);
-      if (!mounted || serial != overlayTransitionSerial) {
-        image.evict();
-        return;
-      }
-      setState(() {
-        readerSnapshotImage?.evict();
-        readerSnapshotBytes = bytes;
-        readerSnapshotImage = image;
-      });
-    } catch (error) {
-      debugPrint('SQuartor reader snapshot failed: $error');
-    }
+    // Disable snapshot overlay to avoid blocking Android GPU rendering
+    // and ensure live WebView is always visible and responsive.
+    return;
   }
 
   @override
   Future<void> refreshFrozenReaderSnapshot() async {
-    if (usesFlutterTxt || usesVerticalScroll) {
-      return;
-    }
-    final serial = overlayTransitionSerial;
-    if (!mounted ||
-        overlay != ReaderOverlay.settings ||
-        readerSnapshotImage == null ||
-        isLoading) {
-      return;
-    }
-    await Future<void>.delayed(const Duration(milliseconds: 90));
-    if (!mounted ||
-        serial != overlayTransitionSerial ||
-        overlay != ReaderOverlay.settings) {
-      return;
-    }
-    final ctrl = controller;
-    if (ctrl == null) {
-      return;
-    }
-    try {
-      final bytes = await ctrl.takeScreenshot(
-        screenshotConfiguration: ScreenshotConfiguration(
-          snapshotWidth: MediaQuery.sizeOf(context).width,
-          compressFormat: CompressFormat.PNG,
-          quality: 100,
-        ),
-      );
-      if (!mounted ||
-          serial != overlayTransitionSerial ||
-          overlay != ReaderOverlay.settings ||
-          bytes == null ||
-          bytes.isEmpty) {
-        return;
-      }
-      final image = MemoryImage(bytes);
-      await precacheImage(image, context);
-      if (!mounted ||
-          serial != overlayTransitionSerial ||
-          overlay != ReaderOverlay.settings) {
-        image.evict();
-        return;
-      }
-      final oldImage = readerSnapshotImage;
-      setState(() {
-        readerSnapshotBytes = bytes;
-        readerSnapshotImage = image;
-      });
-      oldImage?.evict();
-    } catch (error) {
-      debugPrint('SQuartor reader snapshot refresh failed: $error');
-    }
+    // No-op: live WebView updates dynamically without needing snapshot images.
+    return;
   }
 
   @override

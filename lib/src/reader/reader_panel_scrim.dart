@@ -23,10 +23,14 @@ class ReaderPanelScrim extends StatelessWidget {
           duration: const Duration(milliseconds: 240),
           curve: Curves.easeOut,
           opacity: visible ? 1 : 0,
-          child: GestureDetector(
+          child: Listener(
             behavior: HitTestBehavior.opaque,
-            onTap: onDismiss,
-            child: const ColoredBox(color: Colors.transparent),
+            onPointerSignal: (_) {},
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onDismiss,
+              child: const ColoredBox(color: Colors.transparent),
+            ),
           ),
         ),
       ),

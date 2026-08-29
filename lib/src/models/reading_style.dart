@@ -21,6 +21,7 @@ class ReadingStyle {
     this.firstLineIndent = true,
     this.dimJapaneseText = false,
     this.pageTurnAnimation = false,
+    this.fontWeightValue = 400,
     this.fontName,
     this.fontPath,
     this.appFontName,
@@ -42,10 +43,41 @@ class ReadingStyle {
   final bool firstLineIndent;
   final bool dimJapaneseText;
   final bool pageTurnAnimation;
+  final int fontWeightValue;
   final String? fontName;
   final String? fontPath;
   final String? appFontName;
   final String? appFontPath;
+
+  FontWeight get fontWeight {
+    return switch (fontWeightValue) {
+      100 => FontWeight.w100,
+      200 => FontWeight.w200,
+      300 => FontWeight.w300,
+      400 => FontWeight.w400,
+      500 => FontWeight.w500,
+      600 => FontWeight.w600,
+      700 => FontWeight.w700,
+      800 => FontWeight.w800,
+      900 => FontWeight.w900,
+      _ => FontWeight.w400,
+    };
+  }
+
+  String get fontWeightLabel {
+    return switch (fontWeightValue) {
+      100 => '极细 (100)',
+      200 => '特细 (200)',
+      300 => '细体 (300)',
+      400 => '常规 (400)',
+      500 => '中等 (500)',
+      600 => '半粗 (600)',
+      700 => '粗体 (700)',
+      800 => '特粗 (800)',
+      900 => '浓黑 (900)',
+      _ => '$fontWeightValue',
+    };
+  }
 
   AppPalette get palette => resolvePalette(Brightness.dark);
   ReaderPalette get readerPalette => readerPalettes[readerBackground]!;
@@ -98,6 +130,7 @@ class ReadingStyle {
     bool? firstLineIndent,
     bool? dimJapaneseText,
     bool? pageTurnAnimation,
+    int? fontWeightValue,
     String? fontName,
     String? fontPath,
     String? appFontName,
@@ -124,6 +157,7 @@ class ReadingStyle {
       firstLineIndent: firstLineIndent ?? this.firstLineIndent,
       dimJapaneseText: dimJapaneseText ?? this.dimJapaneseText,
       pageTurnAnimation: pageTurnAnimation ?? this.pageTurnAnimation,
+      fontWeightValue: fontWeightValue ?? this.fontWeightValue,
       fontName: clearFont ? null : fontName ?? this.fontName,
       fontPath: clearFont ? null : fontPath ?? this.fontPath,
       appFontName: clearAppFont ? null : appFontName ?? this.appFontName,
@@ -147,6 +181,7 @@ class ReadingStyle {
     'firstLineIndent': firstLineIndent,
     'dimJapaneseText': dimJapaneseText,
     'pageTurnAnimation': pageTurnAnimation,
+    'fontWeightValue': fontWeightValue,
     'fontName': fontName,
     'fontPath': fontPath,
     'appFontName': appFontName,
@@ -202,6 +237,7 @@ class ReadingStyle {
       firstLineIndent: json['firstLineIndent'] as bool? ?? true,
       dimJapaneseText: json['dimJapaneseText'] as bool? ?? false,
       pageTurnAnimation: json['pageTurnAnimation'] as bool? ?? false,
+      fontWeightValue: ranged(json['fontWeightValue'], 400, 100, 900).round(),
       fontName: json['fontName'] as String?,
       fontPath: json['fontPath'] as String?,
       appFontName: json['appFontName'] as String?,

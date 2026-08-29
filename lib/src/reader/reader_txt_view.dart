@@ -119,7 +119,7 @@ class _FlutterTxtReaderViewState extends State<FlutterTxtReaderView> {
       height: widget.style.lineHeight,
       letterSpacing: widget.style.letterSpacing,
       leadingDistribution: TextLeadingDistribution.even,
-      fontWeight: AppTextWeight.regular,
+      fontWeight: widget.style.fontWeight,
     );
     final titleStyle = TextStyle(
       fontFamily: widget.fontFamily,
@@ -394,7 +394,7 @@ class _FlutterTxtScrollReaderViewState
       height: widget.style.lineHeight,
       letterSpacing: widget.style.letterSpacing,
       leadingDistribution: TextLeadingDistribution.even,
-      fontWeight: AppTextWeight.regular,
+      fontWeight: widget.style.fontWeight,
     );
     final titleStyle = TextStyle(
       fontFamily: widget.fontFamily,

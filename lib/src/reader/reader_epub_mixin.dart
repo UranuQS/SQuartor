@@ -78,6 +78,7 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
       'safeBottom': systemPadding.bottom,
       'firstLineIndent': style.firstLineIndent,
       'readingFlow': style.readingFlow.name,
+      'fontWeight': style.fontWeightValue,
       'fontName': style.fontName == null ? null : 'SQuartorCustomFont',
       'fontUri': style.fontPath == null
           ? null
@@ -139,6 +140,38 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
   const safeBottom = cfg.verticalMargin + (cfg.safeBottom || 0);
   const effectiveFontSize = Math.max(16, Math.min(38, cfg.fontSize * 1.12));
   const scrollMode = cfg.readingFlow === 'scroll';
+  const fontWeight = Number(cfg.fontWeight) || 400;
+  let strokeWidth = 0;
+  let textOpacity = 1.0;
+  let shadowRule = ' text-shadow: none !important;';
+  if (fontWeight <= 100) {
+    textOpacity = 0.65;
+  } else if (fontWeight <= 200) {
+    textOpacity = 0.78;
+  } else if (fontWeight <= 300) {
+    textOpacity = 0.88;
+  } else if (fontWeight <= 400) {
+    strokeWidth = 0;
+  } else if (fontWeight <= 500) {
+    strokeWidth = 0.50;
+    shadowRule = ' text-shadow: 0.35px 0 0 ' + cfg.text + ', -0.35px 0 0 ' + cfg.text + ' !important;';
+  } else if (fontWeight <= 600) {
+    strokeWidth = 0.35;
+    shadowRule = ' text-shadow: 0.25px 0 0 ' + cfg.text + ' !important;';
+  } else if (fontWeight <= 700) {
+    strokeWidth = 0.75;
+    shadowRule = ' text-shadow: 0.50px 0 0 ' + cfg.text + ', -0.50px 0 0 ' + cfg.text + ' !important;';
+  } else if (fontWeight <= 800) {
+    strokeWidth = 1.25;
+    shadowRule = ' text-shadow: 0.85px 0 0 ' + cfg.text + ', -0.85px 0 0 ' + cfg.text + ' !important;';
+  } else {
+    strokeWidth = 1.80;
+    shadowRule = ' text-shadow: 1.20px 0 0 ' + cfg.text + ', -1.20px 0 0 ' + cfg.text + ', 0 0.6px 0 ' + cfg.text + ' !important;';
+  }
+  const strokeRule = strokeWidth > 0 ? ' -webkit-text-stroke: ' + strokeWidth + 'px ' + cfg.text + ' !important;' : ' -webkit-text-stroke: 0px transparent !important;';
+  const opacityRule = textOpacity < 1.0 ? ' opacity: ' + textOpacity + ' !important;' : '';
+  const headingStroke = (strokeWidth + 0.45).toFixed(2);
+  const headingWeight = Math.min(900, fontWeight + 200);
 
   style.textContent =
     fontFace + '\\n' +
@@ -165,6 +198,11 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
     ' background: transparent !important;' +
     ' color: ' + cfg.text + ' !important;' +
     ' font-family: ' + fontFamily + ' !important;' +
+    ' font-weight: ' + fontWeight + ' !important;' +
+    ' font-variation-settings: \\'wght\\' ' + fontWeight + ' !important;' +
+    strokeRule +
+    shadowRule +
+    opacityRule +
     ' font-size: ' + effectiveFontSize + 'px !important;' +
     ' line-height: ' + cfg.lineHeight + ' !important;' +
     ' letter-spacing: ' + cfg.letterSpacing + 'px !important;' +
@@ -176,6 +214,18 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
     ' will-change: transform !important;' +
     ' backface-visibility: hidden !important;' +
     ' -webkit-text-size-adjust: none !important;' +
+    '}\\n' +
+    '#squartor-source, #squartor-source p, #squartor-source span, #squartor-source div, #squartor-source a, #squartor-source li, #squartor-source dd, #squartor-source dt, #squartor-source blockquote {' +
+    ' font-family: ' + fontFamily + ' !important;' +
+    ' font-weight: ' + fontWeight + ' !important;' +
+    ' font-variation-settings: \\'wght\\' ' + fontWeight + ' !important;' +
+    strokeRule +
+    shadowRule +
+    opacityRule +
+    '}\\n' +
+    '#squartor-source b, #squartor-source strong, #squartor-source h1, #squartor-source h2, #squartor-source h3, #squartor-source h4, #squartor-source h5, #squartor-source h6 {' +
+    ' font-weight: ' + headingWeight + ' !important;' +
+    ' -webkit-text-stroke: ' + headingStroke + 'px ' + cfg.text + ' !important;' +
     '}\\n' +
     '#squartor-source > .sq-spine-marker { display: none !important; }\\n' +
     '#squartor-source p, #squartor-source h1, #squartor-source h2,' +
@@ -210,8 +260,15 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
     '#squartor-source > .sq-title-lead {' +
     ' font-size: ' + (effectiveFontSize * 1.28) + 'px !important;' +
     ' font-weight: 700 !important;' +
+    ' font-variation-settings: \\'wght\\' ' + Math.min(900, fontWeight + 300) + ' !important;' +
+    ' -webkit-text-stroke: ' + headingStroke + 'px currentColor !important;' +
     ' line-height: 1.38 !important;' +
     ' text-indent: 0 !important;' +
+    '}\\n' +
+    '#squartor-source b, #squartor-source strong {' +
+    ' font-weight: 700 !important;' +
+    ' font-variation-settings: \\'wght\\' ' + Math.min(900, fontWeight + 300) + ' !important;' +
+    ' -webkit-text-stroke: ' + headingStroke + 'px currentColor !important;' +
     '}\\n' +
     '#squartor-source.squartor-image-page {' +
     ' display: flex !important;' +
