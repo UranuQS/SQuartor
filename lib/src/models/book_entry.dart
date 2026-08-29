@@ -276,3 +276,25 @@ class BookEntry {
     );
   }
 }
+
+class StorageStats {
+  const StorageStats({
+    required this.booksBytes,
+    required this.cacheBytes,
+  });
+
+  final int booksBytes;
+  final int cacheBytes;
+
+  int get totalBytes => booksBytes + cacheBytes;
+
+  static String formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+}
+

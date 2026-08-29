@@ -359,6 +359,13 @@ class AppState extends ChangeNotifier {
     await _repository.saveFonts(_fonts);
   }
 
+  Future<StorageStats> getStorageStats() => _repository.getStorageStats();
+
+  Future<void> clearCache() async {
+    await _repository.clearCache();
+    notifyListeners();
+  }
+
   int _storeImportedBooks(List<BookEntry> books) {
     if (books.isEmpty) {
       return 0;

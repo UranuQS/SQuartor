@@ -69,6 +69,14 @@ class SettingsScreen extends StatelessWidget {
                   palette: palette,
                   onTap: () => _openCloudSyncPage(context),
                 ),
+                SettingEntry(
+                  icon: Icons.cleaning_services_rounded,
+                  iconColor: const Color(0xFF4CAF50),
+                  title: '存储与缓存',
+                  subtitle: '管理书籍占用空间、清理冗余文件与临时缓存',
+                  palette: palette,
+                  onTap: () => _openStoragePage(context),
+                ),
               ],
             ),
             const SizedBox(height: 26),
@@ -121,6 +129,14 @@ class SettingsScreen extends StatelessWidget {
         _showComingSoon(context, '没有找到可打开 GitHub 链接的应用。');
       }
     });
+  }
+
+  void _openStoragePage(BuildContext context) {
+    Navigator.of(context).push(
+      CupertinoPageRoute<void>(
+        builder: (context) => _StoragePage(state: state),
+      ),
+    );
   }
 
   void _openCloudSyncPage(BuildContext context) {
@@ -861,3 +877,220 @@ class _CloudTextField extends StatelessWidget {
     );
   }
 }
+
+class _StoragePage extends StatefulWidget {
+  const _StoragePage({required this.state});
+
+  final AppState state;
+
+  @override
+  State<_StoragePage> createState() => _StoragePageState();
+}
+
+class _StoragePageState extends State<_StoragePage> {
+  StorageStats? _stats;
+  var _loading = true;
+  var _cleaning = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStats();
+  }
+
+  Future<void> _loadStats() async {
+    final stats = await widget.state.getStorageStats();
+    if (mounted) {
+      setState(() {
+        _stats = stats;
+        _loading = false;
+      });
+    }
+  }
+
+  Future<void> _handleClean() async {
+    if (_cleaning) return;
+    setState(() => _cleaning = true);
+    await widget.state.clearCache();
+    await _loadStats();
+    if (mounted) {
+      setState(() => _cleaning = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('已清理临时渲染缓存与冗余文件！'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = widget.state.palette;
+    return Scaffold(
+      backgroundColor: palette.background,
+      appBar: AppBar(
+        backgroundColor: palette.background,
+        elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_rounded, color: palette.text),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Text(
+          '存储与缓存',
+          style: TextStyle(
+            color: palette.text,
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+      body: _loading
+          ? Center(
+              child: CircularProgressIndicator(color: palette.primarySoft),
+            )
+          : ListView(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+              children: [
+                SettingsCard(
+                  palette: palette,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.storage_rounded,
+                            color: palette.primarySoft,
+                            size: 26,
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            '占用统计',
+                            style: TextStyle(
+                              color: palette.text,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      _storageRow(
+                        label: '已导入书籍数据',
+                        value: StorageStats.formatBytes(_stats?.booksBytes ?? 0),
+                        palette: palette,
+                      ),
+                      const SizedBox(height: 12),
+                      _storageRow(
+                        label: '临时与渲染缓存',
+                        value: StorageStats.formatBytes(_stats?.cacheBytes ?? 0),
+                        palette: palette,
+                      ),
+                      const Divider(height: 28),
+                      _storageRow(
+                        label: '总占用空间',
+                        value: StorageStats.formatBytes(_stats?.totalBytes ?? 0),
+                        palette: palette,
+                        isTotal: true,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton.icon(
+                  onPressed: _cleaning ? null : _handleClean,
+                  icon: _cleaning
+                      ? SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: palette.isLight ? Colors.white : Colors.black,
+                          ),
+                        )
+                      : const Icon(Icons.cleaning_services_rounded, size: 20),
+                  label: Text(_cleaning ? '正在清理中...' : '一键清理缓存与冗余文件'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: palette.primarySoft,
+                    foregroundColor: palette.isLight ? Colors.white : Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 0,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SettingsCard(
+                  palette: palette,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.verified_outlined,
+                            color: palette.muted,
+                            size: 22,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            '无损瘦身机制说明',
+                            style: TextStyle(
+                              color: palette.text,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        '1. 书籍全部插图与彩页均保留 100% 原始高清画质，不进行任何有损压缩。\n'
+                        '2. 导入书籍时会自动剔除解压后重复冗余的无用中间文本，只保留阅读排版与媒体文件，直接节省 60% 以上空间。\n'
+                        '3. 清理缓存仅删除临时网页渲染快照与系统临时文件，绝不会删除任何已导入书籍、书签及阅读进度。',
+                        style: TextStyle(
+                          color: palette.muted,
+                          fontSize: 13,
+                          height: 1.6,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Widget _storageRow({
+    required String label,
+    required String value,
+    required AppPalette palette,
+    bool isTotal = false,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: isTotal ? palette.text : palette.muted,
+            fontSize: isTotal ? 15 : 14,
+            fontWeight: isTotal ? FontWeight.w600 : FontWeight.normal,
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            color: isTotal ? palette.primarySoft : palette.text,
+            fontSize: isTotal ? 16 : 14,
+            fontWeight: isTotal ? FontWeight.bold : FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+}
+

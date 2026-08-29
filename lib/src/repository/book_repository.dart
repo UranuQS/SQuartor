@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -448,6 +449,10 @@ class BookRepository {
       estimateWordCount: _estimateWordCount,
     );
     final wordCount = _sumChapterWordCounts(chapters);
+
+    // Prune redundant intermediate text files (.xhtml, .html, .xml, .ncx, .opf) to save storage
+    await _cleanupRedundantEpubFiles(extractDir);
+
     return BookEntry(
       id: id,
       title: meta.title,
@@ -462,6 +467,78 @@ class BookRepository {
     );
   }
 
+  static Future<void> _cleanupRedundantEpubFiles(Directory extractDir) async {
+    if (!await extractDir.exists()) return;
+    try {
+      final entities = extractDir.listSync(recursive: true);
+      for (final entity in entities) {
+        if (entity is File) {
+          final ext = path.extension(entity.path).toLowerCase();
+          if (const {'.xhtml', '.html', '.htm', '.xml', '.ncx', '.opf', '.txt'}.contains(ext)) {
+            try {
+              entity.deleteSync();
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<StorageStats> getStorageStats() async {
+    var booksBytes = 0;
+    var cacheBytes = 0;
+    try {
+      final root = await _rootDir();
+      final booksDir = Directory(path.join(root.path, 'books'));
+      if (await booksDir.exists()) {
+        for (final file in booksDir.listSync(recursive: true).whereType<File>()) {
+          try {
+            booksBytes += file.lengthSync();
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+
+    try {
+      final tempDir = await getTemporaryDirectory();
+      if (await tempDir.exists()) {
+        for (final file in tempDir.listSync(recursive: true).whereType<File>()) {
+          try {
+            cacheBytes += file.lengthSync();
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+
+    return StorageStats(booksBytes: booksBytes, cacheBytes: cacheBytes);
+  }
+
+  Future<void> clearCache() async {
+    // 1. Clear temporary cache directory
+    try {
+      final tempDir = await getTemporaryDirectory();
+      if (await tempDir.exists()) {
+        for (final entity in tempDir.listSync()) {
+          try {
+            entity.deleteSync(recursive: true);
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+
+    // 2. Clean all redundant epub files in books/
+    try {
+      final root = await _rootDir();
+      final booksDir = Directory(path.join(root.path, 'books'));
+      if (await booksDir.exists()) {
+        for (final bookSub in booksDir.listSync().whereType<Directory>()) {
+          final epubDir = Directory(path.join(bookSub.path, 'epub'));
+          await _cleanupRedundantEpubFiles(epubDir);
+        }
+      }
+    } catch (_) {}
+  }
+
   Future<List<BookEntry>> _upgradeImportedEpubs(List<BookEntry> books) async {
     var changed = false;
     final upgraded = <BookEntry>[];
@@ -469,6 +546,8 @@ class BookRepository {
       final readerDir = path.join(book.bookDir, 'reader');
       var alreadyPrepared = book.format != BookFormat.epub;
       if (book.format == BookFormat.epub) {
+        // Opportunistically prune redundant intermediate files from existing books
+        unawaited(_cleanupRedundantEpubFiles(Directory(path.join(book.bookDir, 'epub'))));
         final versionFile = File(
           path.join(readerDir, EpubParser.epubReaderVersionFile),
         );
