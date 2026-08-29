@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +11,7 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:squartor/src/book_repository.dart';
+import 'package:squartor/src/repository/epub_stream_reader.dart';
 
 class _FakePathProviderPlatform extends Fake
     with MockPlatformInterfaceMixin
@@ -57,32 +59,30 @@ void main() {
         for (final file in files) {
           final book = await repository.importBookFile(file.path);
           print('Imported [${book.title}], chapters: ${book.chapters.length}');
+          expect(book.chapters, isNotEmpty);
           final bookDir = Directory(book.bookDir);
           final allFiles = bookDir.listSync(recursive: true).whereType<File>().toList();
           var totalBytes = 0;
-          final bySubdir = <String, int>{};
           for (final f in allFiles) {
-            final len = f.lengthSync();
-            totalBytes += len;
-            final rel = path.relative(f.path, from: bookDir.path);
-            final top = rel.split(Platform.pathSeparator).first;
-            bySubdir[top] = (bySubdir[top] ?? 0) + len;
+            totalBytes += f.lengthSync();
           }
-          print('Book [${book.title}] disk size: ${(totalBytes / (1024 * 1024)).toStringAsFixed(2)} MB (Original raw file was ${(file.lengthSync() / (1024 * 1024)).toStringAsFixed(2)} MB)');
-          for (final entry in bySubdir.entries) {
-            print('  - ${entry.key}: ${(entry.value / (1024 * 1024)).toStringAsFixed(2)} MB');
-          }
-          final epubDir = Directory(path.join(bookDir.path, 'epub'));
-          if (epubDir.existsSync()) {
-            final extSizes = <String, int>{};
-            for (final f in epubDir.listSync(recursive: true).whereType<File>()) {
-              final ext = path.extension(f.path).toLowerCase();
-              extSizes[ext] = (extSizes[ext] ?? 0) + f.lengthSync();
-            }
-            print('  Breakdown of epub/ directory:');
-            for (final entry in extSizes.entries) {
-              print('    * ${entry.key}: ${(entry.value / (1024 * 1024)).toStringAsFixed(2)} MB');
-            }
+          print('Book [${book.title}] direct-stream disk size: ${(totalBytes / 1024).toStringAsFixed(1)} KB (Original file: ${(file.lengthSync() / (1024 * 1024)).toStringAsFixed(2)} MB)');
+          expect(totalBytes, lessThan(500 * 1024), reason: 'Zero-copy direct stream must write < 500KB (only cover thumbnail)');
+
+          // Test reading chapters in-memory
+          for (var i = 0; i < math.min(10, book.chapters.length); i++) {
+            final ch = book.chapters[i];
+            expect(ch.filePath.startsWith('sq-epub://'), isTrue);
+            final rest = ch.filePath.substring('sq-epub://'.length);
+            final hash = rest.indexOf('#');
+            final epubPath = hash >= 0 ? rest.substring(0, hash) : rest;
+            final entry = hash >= 0 ? rest.substring(hash + 1) : '';
+            final html = await EpubStreamReader.readEpubChapterHtml(
+              epubPath,
+              entry,
+              decodeText: (b) => utf8.decode(b, allowMalformed: true),
+            );
+            expect(html, isNotEmpty);
           }
         }
       } finally {

@@ -16,7 +16,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models.dart';
 import 'epub_parser.dart';
+import 'epub_stream_reader.dart';
 import 'txt_parser.dart';
+import 'txt_stream_reader.dart';
 import 'book_repository_types.dart';
 
 String _encodeBooksForPrefs(List<BookEntry> books) {
@@ -362,25 +364,12 @@ class BookRepository {
     final bookDir = Directory(path.join((await _rootDir()).path, 'books', id));
     await bookDir.create(recursive: true);
 
-    final title = path.basenameWithoutExtension(source.path);
-    final chapters = await TxtParser.prepareTxtReader(
-      sourceFile: source,
+    return TxtStreamReader.importTxtDirect(
+      source,
       bookDir: bookDir,
-      title: title,
+      id: id,
       decodeText: _decodeText,
       estimateWordCount: _estimateWordCount,
-    );
-
-    return BookEntry(
-      id: id,
-      title: title,
-      author: '本地 TXT',
-      format: BookFormat.txt,
-      bookDir: bookDir.path,
-      sourcePath: source.path,
-      importedAt: DateTime.now(),
-      chapters: chapters,
-      wordCount: _sumChapterWordCounts(chapters),
     );
   }
 
@@ -412,55 +401,14 @@ class BookRepository {
   Future<BookEntry> _importEpub(File source) async {
     final id = _newId();
     final bookDir = Directory(path.join((await _rootDir()).path, 'books', id));
-    final extractDir = Directory(path.join(bookDir.path, 'epub'));
-    await extractDir.create(recursive: true);
+    await bookDir.create(recursive: true);
 
-    final archive = ZipDecoder().decodeBytes(await source.readAsBytes());
-    for (final file in archive.files) {
-      if (!file.isFile) {
-        continue;
-      }
-      try {
-        final safePath = EpubParser.safeJoin(extractDir.path, file.name);
-        final output = File(safePath);
-        await output.parent.create(recursive: true);
-        await output.writeAsBytes(file.content as List<int>, flush: false);
-      } catch (e) {
-        try {
-          final sanitizedName = file.name.replaceAll(RegExp(r'[:*?"<>|]'), '_');
-          final safePath = EpubParser.safeJoin(extractDir.path, sanitizedName);
-          final output = File(safePath);
-          await output.parent.create(recursive: true);
-          await output.writeAsBytes(file.content as List<int>, flush: false);
-        } catch (_) {}
-      }
-    }
-
-    final meta = await EpubParser.parseEpub(
-      extractDir,
-      path.basenameWithoutExtension(source.path),
-      decodeText: _decodeText,
-    );
-    final chapters = await EpubParser.estimateGeneratedChapterWordCounts(
-      meta.chapters,
-      estimateWordCount: _estimateWordCount,
-    );
-    final wordCount = _sumChapterWordCounts(chapters);
-
-    // Prune redundant intermediate text files and duplicate zip archives to minimize storage
-    await _cleanupRedundantBookFiles(bookDir);
-
-    return BookEntry(
+    return EpubStreamReader.importEpubDirect(
+      source,
+      bookDir: bookDir,
       id: id,
-      title: meta.title,
-      author: meta.author,
-      format: BookFormat.epub,
-      bookDir: bookDir.path,
-      sourcePath: source.path,
-      importedAt: DateTime.now(),
-      chapters: chapters,
-      coverPath: meta.coverPath,
-      wordCount: wordCount,
+      decodeText: _decodeText,
+      estimateWordCount: _estimateWordCount,
     );
   }
 
@@ -533,6 +481,9 @@ class BookRepository {
   }
 
   Future<void> clearCache() async {
+    EpubStreamReader.clearCache();
+    TxtStreamReader.clearCache();
+
     // 1. Clear InAppWebView disk and memory caches
     try {
       if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {

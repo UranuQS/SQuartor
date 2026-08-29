@@ -349,9 +349,17 @@ class ReaderScreenState extends State<ReaderScreen>
                                 ignoring: overlay != ReaderOverlay.hidden,
                                 child: InAppWebView(
                                   key: ValueKey('reader-${book.id}'),
-                                  initialUrlRequest: URLRequest(
-                                    url: WebUri.uri(File(chapter.filePath).uri),
-                                  ),
+                                  initialUrlRequest:
+                                      chapter.filePath.startsWith('sq-') ||
+                                              !File(
+                                                chapter.filePath,
+                                              ).existsSync()
+                                          ? null
+                                          : URLRequest(
+                                              url: WebUri.uri(
+                                                File(chapter.filePath).uri,
+                                              ),
+                                            ),
                                   initialSettings: InAppWebViewSettings(
                                     javaScriptEnabled: true,
                                     transparentBackground: false,
@@ -373,6 +381,10 @@ class ReaderScreenState extends State<ReaderScreen>
                                       handlerName: 'squartorEvent',
                                       callback: handleReaderEvent,
                                     );
+                                    if (chapter.filePath.startsWith('sq-') ||
+                                        !File(chapter.filePath).existsSync()) {
+                                      unawaited(loadCurrentWebViewChapter());
+                                    }
                                   },
                                   onLoadStop: (ctrl, url) async {
                                     readerLog('webview loadStop url=$url');

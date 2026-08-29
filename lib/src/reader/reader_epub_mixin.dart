@@ -10,6 +10,7 @@ import 'package:path/path.dart' as path;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models.dart';
+import '../repository/epub_stream_reader.dart';
 import 'reader_enums.dart';
 import 'reader_epub_fallback.dart';
 import 'reader_state_fields.dart';
@@ -28,9 +29,38 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
     }
     try {
       readerLog('load webview chapter=$chapterIndex file=${chapter.filePath}');
-      await ctrl.loadUrl(
-        urlRequest: URLRequest(url: WebUri.uri(File(chapter.filePath).uri)),
-      );
+      if (chapter.filePath.startsWith('sq-epub://') ||
+          !File(chapter.filePath).existsSync()) {
+        String raw;
+        if (chapter.filePath.startsWith('sq-epub://')) {
+          final rest = chapter.filePath.substring('sq-epub://'.length);
+          final hashIndex = rest.indexOf('#');
+          final epubPath = hashIndex >= 0 ? rest.substring(0, hashIndex) : rest;
+          final chapterHref = hashIndex >= 0 ? rest.substring(hashIndex + 1) : '';
+          raw = await EpubStreamReader.readEpubChapterHtml(
+            epubPath,
+            chapterHref,
+            decodeText: (bytes) => utf8.decode(bytes, allowMalformed: true),
+          );
+        } else {
+          final source = readerBook.sourcePath ?? '';
+          raw = await EpubStreamReader.readEpubChapterHtml(
+            source,
+            chapter.href.split('#').first,
+            decodeText: (bytes) => utf8.decode(bytes, allowMalformed: true),
+          );
+        }
+        await ctrl.loadData(
+          data: raw,
+          mimeType: 'text/html',
+          encoding: 'utf-8',
+          baseUrl: WebUri('https://squartor.local/'),
+        );
+      } else {
+        await ctrl.loadUrl(
+          urlRequest: URLRequest(url: WebUri.uri(File(chapter.filePath).uri)),
+        );
+      }
     } catch (error) {
       readerLog('load webview error $error');
       if (!mounted) {
@@ -1095,7 +1125,35 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
     String? anchor,
     String? endAnchor,
   }) async {
-    final raw = await File(chapter.filePath).readAsString();
+    String raw;
+    if (chapter.filePath.startsWith('sq-epub://')) {
+      final rest = chapter.filePath.substring('sq-epub://'.length);
+      final hashIndex = rest.indexOf('#');
+      final epubPath = hashIndex >= 0 ? rest.substring(0, hashIndex) : rest;
+      final chapterHref = hashIndex >= 0 ? rest.substring(hashIndex + 1) : '';
+      raw = await EpubStreamReader.readEpubChapterHtml(
+        epubPath,
+        chapterHref,
+        decodeText: (bytes) => utf8.decode(bytes, allowMalformed: true),
+      );
+    } else {
+      final file = File(chapter.filePath);
+      if (await file.exists()) {
+        raw = await file.readAsString();
+      } else {
+        final source = readerBook.sourcePath ?? '';
+        if (source.isNotEmpty && await File(source).exists()) {
+          raw = await EpubStreamReader.readEpubChapterHtml(
+            source,
+            chapter.href.split('#').first,
+            decodeText: (bytes) => utf8.decode(bytes, allowMalformed: true),
+          );
+        } else {
+          throw FileSystemException('EPUB chapter file not found', chapter.filePath);
+        }
+      }
+    }
+
     final document = html_parser.parse(raw);
     final body = document.body;
     if (body == null ||

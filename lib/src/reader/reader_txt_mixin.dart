@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data' as typed_data show ByteData;
@@ -8,6 +9,7 @@ import 'package:flutter/services.dart' show FontLoader;
 import 'package:html/parser.dart' as html_parser;
 
 import '../models.dart';
+import '../repository/txt_stream_reader.dart';
 import '../typography.dart';
 import 'reader_enums.dart';
 import 'reader_epub_fallback.dart';
@@ -172,7 +174,39 @@ mixin ReaderTxtMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
   Future<FlutterTxtDocument> readFlutterTxtDocument(
     ReaderChapter chapter,
   ) async {
-    final raw = await File(chapter.filePath).readAsString();
+    String raw;
+    if (chapter.filePath.startsWith('sq-txt://')) {
+      final rest = chapter.filePath.substring('sq-txt://'.length);
+      final hashIndex = rest.indexOf('#');
+      final txtPath = hashIndex >= 0 ? rest.substring(0, hashIndex) : rest;
+      final indexStr = hashIndex >= 0 ? rest.substring(hashIndex + 1) : '0';
+      final chapterIndex = int.tryParse(indexStr) ?? 0;
+      raw = await TxtStreamReader.readTxtChapterHtml(
+        txtPath,
+        chapterIndex,
+        chapter.title,
+        decodeText: (bytes) => utf8.decode(bytes, allowMalformed: true),
+      );
+    } else {
+      final file = File(chapter.filePath);
+      if (await file.exists()) {
+        raw = await file.readAsString();
+      } else {
+        final source = readerBook.sourcePath ?? '';
+        if (source.isNotEmpty && await File(source).exists()) {
+          final index = readerBook.chapters.indexOf(chapter);
+          raw = await TxtStreamReader.readTxtChapterHtml(
+            source,
+            index >= 0 ? index : 0,
+            chapter.title,
+            decodeText: (bytes) => utf8.decode(bytes, allowMalformed: true),
+          );
+        } else {
+          throw FileSystemException('TXT chapter file not found', chapter.filePath);
+        }
+      }
+    }
+
     final document = html_parser.parse(raw);
     final title =
         document

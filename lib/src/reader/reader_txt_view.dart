@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_page_curl/flutter_page_curl.dart';
 
 import '../models.dart';
+import '../repository/epub_stream_reader.dart';
 import '../typography.dart';
 import 'custom_page_curl_view.dart';
 import 'reader_enums.dart';
@@ -1529,6 +1530,18 @@ class _FlutterReaderImageState extends State<FlutterReaderImage> {
     if (_providerSource == source) {
       return;
     }
+
+    if (source.startsWith('sq-epub://')) {
+      _providerSource = source;
+      final questionIndex = source.indexOf('?entry=');
+      if (questionIndex >= 0) {
+        final epubPath = source.substring('sq-epub://'.length, questionIndex);
+        final entryHref = Uri.decodeComponent(source.substring(questionIndex + '?entry='.length));
+        _loadStreamEpubImage(epubPath, entryHref, source);
+        return;
+      }
+    }
+
     final uri = Uri.tryParse(source);
     try {
       if (uri?.scheme == 'file') {
@@ -1549,6 +1562,22 @@ class _FlutterReaderImageState extends State<FlutterReaderImage> {
       _provider = null;
       _providerSource = null;
       _broken = true;
+    }
+  }
+
+  void _loadStreamEpubImage(String epubPath, String entryHref, String source) async {
+    final bytes = await EpubStreamReader.readEpubImageBytes(epubPath, entryHref);
+    if (!mounted || _providerSource != source) return;
+    if (bytes != null && bytes.isNotEmpty) {
+      setState(() {
+        _provider = MemoryImage(bytes);
+        _broken = false;
+      });
+    } else {
+      setState(() {
+        _provider = null;
+        _broken = true;
+      });
     }
   }
 
