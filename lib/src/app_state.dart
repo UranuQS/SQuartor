@@ -84,6 +84,7 @@ class AppState extends ChangeNotifier {
   ImportActivity? _importActivity;
   Timer? _importActivityClearTimer;
   String? _appFontFamily;
+  String? _defaultReaderFontUri;
 
   List<BookEntry> get books => _books;
   List<ImportedFont> get fonts => _fonts;
@@ -106,6 +107,7 @@ class AppState extends ChangeNotifier {
   );
   bool get loading => _loading;
   String? get error => _error;
+  String? get defaultReaderFontUri => _defaultReaderFontUri;
   ImportActivity? get importActivity => _importActivity;
   Future<void> get ready => _initialLoad;
 
@@ -145,6 +147,7 @@ class AppState extends ChangeNotifier {
       _style = snapshot.style;
       _cloudSyncSettings = snapshot.cloudSyncSettings;
       _appFontFamily = await _appFontRegistrar.register(_style.appFontPath);
+      _defaultReaderFontUri = await _repository.ensureDefaultReaderFont();
       _error = null;
     } catch (error) {
       _error = '加载数据失败：$error';

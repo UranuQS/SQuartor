@@ -5,6 +5,7 @@ import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:gbk_codec/gbk_codec.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:path/path.dart' as path;
@@ -700,6 +701,22 @@ class BookRepository {
     final dir = await getApplicationDocumentsDirectory();
     return Directory(path.join(dir.path, 'squartor'))
       ..createSync(recursive: true);
+  }
+
+  Future<String?> ensureDefaultReaderFont() async {
+    try {
+      final root = await _rootDir();
+      final fontsDir = Directory(path.join(root.path, 'fonts'))..createSync(recursive: true);
+      final fontFile = File(path.join(fontsDir.path, 'NotoSansSC-VF.ttf'));
+      if (!await fontFile.exists() || await fontFile.length() < 100000) {
+        final data = await rootBundle.load('assets/fonts/NotoSansSC-VF.ttf');
+        final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+        await fontFile.writeAsBytes(bytes, flush: true);
+      }
+      return fontFile.uri.toString();
+    } catch (_) {
+      return null;
+    }
   }
 
   String _safeFileName(String input) {

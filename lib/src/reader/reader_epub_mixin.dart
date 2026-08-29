@@ -83,6 +83,7 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
       'fontUri': style.fontPath == null
           ? null
           : File(style.fontPath!).uri.toString(),
+      'defaultFontUri': appState.defaultReaderFontUri,
       'initialProgress': initialProgress,
       'anchor': webAnchor,
       'endAnchor': webEndAnchor,
@@ -132,8 +133,9 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
 
   const style = document.createElement('style');
   style.id = 'squartor-style';
-  const fontFace = cfg.fontUri ? "@font-face { font-family: 'SQuartorCustomFont'; src: url('" + cfg.fontUri + "'); }" : '';
-  const fontFamily = cfg.fontName ? "'SQuartorCustomFont', sans-serif" : 'system-ui, sans-serif';
+  const fontFace = cfg.fontUri ? "@font-face { font-family: 'SQuartorCustomFont'; src: url('" + cfg.fontUri + "'); font-weight: 100 900; }\\n" : '';
+  const defaultFontFace = cfg.defaultFontUri ? "@font-face { font-family: 'SQuartorDefaultVF'; src: url('" + cfg.defaultFontUri + "') format('truetype'); font-weight: 100 900; }\\n" : '';
+  const fontFamily = cfg.fontName ? "'SQuartorCustomFont', 'SQuartorDefaultVF', sans-serif" : (cfg.defaultFontUri ? "'SQuartorDefaultVF', system-ui, sans-serif" : 'system-ui, sans-serif');
   const horizontalMargin = Math.max(0, Number(cfg.pageMargin || 0));
   const pageGap = horizontalMargin * 2;
   const safeTop = cfg.verticalMargin + (cfg.safeTop || 0);
@@ -141,39 +143,10 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
   const effectiveFontSize = Math.max(16, Math.min(38, cfg.fontSize * 1.12));
   const scrollMode = cfg.readingFlow === 'scroll';
   const fontWeight = Number(cfg.fontWeight) || 400;
-  let strokeWidth = 0;
-  let textOpacity = 1.0;
-  let shadowRule = ' text-shadow: none !important;';
-  if (fontWeight <= 100) {
-    textOpacity = 0.65;
-  } else if (fontWeight <= 200) {
-    textOpacity = 0.78;
-  } else if (fontWeight <= 300) {
-    textOpacity = 0.88;
-  } else if (fontWeight <= 400) {
-    strokeWidth = 0;
-  } else if (fontWeight <= 500) {
-    strokeWidth = 0.50;
-    shadowRule = ' text-shadow: 0.35px 0 0 ' + cfg.text + ', -0.35px 0 0 ' + cfg.text + ' !important;';
-  } else if (fontWeight <= 600) {
-    strokeWidth = 0.35;
-    shadowRule = ' text-shadow: 0.25px 0 0 ' + cfg.text + ' !important;';
-  } else if (fontWeight <= 700) {
-    strokeWidth = 0.75;
-    shadowRule = ' text-shadow: 0.50px 0 0 ' + cfg.text + ', -0.50px 0 0 ' + cfg.text + ' !important;';
-  } else if (fontWeight <= 800) {
-    strokeWidth = 1.25;
-    shadowRule = ' text-shadow: 0.85px 0 0 ' + cfg.text + ', -0.85px 0 0 ' + cfg.text + ' !important;';
-  } else {
-    strokeWidth = 1.80;
-    shadowRule = ' text-shadow: 1.20px 0 0 ' + cfg.text + ', -1.20px 0 0 ' + cfg.text + ', 0 0.6px 0 ' + cfg.text + ' !important;';
-  }
-  const strokeRule = strokeWidth > 0 ? ' -webkit-text-stroke: ' + strokeWidth + 'px ' + cfg.text + ' !important;' : ' -webkit-text-stroke: 0px transparent !important;';
-  const opacityRule = textOpacity < 1.0 ? ' opacity: ' + textOpacity + ' !important;' : '';
-  const headingStroke = (strokeWidth + 0.45).toFixed(2);
-  const headingWeight = Math.min(900, fontWeight + 200);
+  const headingWeight = Math.min(900, fontWeight + 300);
 
   style.textContent =
+    defaultFontFace +
     fontFace + '\\n' +
     'html, body { background: ' + cfg.background + ' !important; width: 100vw !important; height: 100vh !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; }\\n' +
     '#squartor-root {' +
@@ -200,9 +173,6 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
     ' font-family: ' + fontFamily + ' !important;' +
     ' font-weight: ' + fontWeight + ' !important;' +
     ' font-variation-settings: \\'wght\\' ' + fontWeight + ' !important;' +
-    strokeRule +
-    shadowRule +
-    opacityRule +
     ' font-size: ' + effectiveFontSize + 'px !important;' +
     ' line-height: ' + cfg.lineHeight + ' !important;' +
     ' letter-spacing: ' + cfg.letterSpacing + 'px !important;' +
@@ -219,13 +189,11 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
     ' font-family: ' + fontFamily + ' !important;' +
     ' font-weight: ' + fontWeight + ' !important;' +
     ' font-variation-settings: \\'wght\\' ' + fontWeight + ' !important;' +
-    strokeRule +
-    shadowRule +
-    opacityRule +
     '}\\n' +
     '#squartor-source b, #squartor-source strong, #squartor-source h1, #squartor-source h2, #squartor-source h3, #squartor-source h4, #squartor-source h5, #squartor-source h6 {' +
+    ' font-family: ' + fontFamily + ' !important;' +
     ' font-weight: ' + headingWeight + ' !important;' +
-    ' -webkit-text-stroke: ' + headingStroke + 'px ' + cfg.text + ' !important;' +
+    ' font-variation-settings: \\'wght\\' ' + headingWeight + ' !important;' +
     '}\\n' +
     '#squartor-source > .sq-spine-marker { display: none !important; }\\n' +
     '#squartor-source p, #squartor-source h1, #squartor-source h2,' +

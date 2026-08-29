@@ -808,7 +808,7 @@ mixin ReaderTxtMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
   @override
   Future<String?> registerReaderFont(String? fontPath) async {
     if (fontPath == null || fontPath.isEmpty) {
-      return null;
+      return 'SQuartorReaderFont';
     }
     try {
       final file = File(fontPath);
