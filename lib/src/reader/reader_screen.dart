@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:path/path.dart' as path;
 
@@ -22,6 +23,8 @@ import 'reader_epub_mixin.dart';
 import 'reader_txt_mixin.dart';
 import 'reader_navigation_mixin.dart';
 import 'reader_gesture_mixin.dart';
+import 'reader_bookmark_mixin.dart';
+import 'reader_bookmark_pull.dart';
 import 'reader_overlay_mixin.dart';
 import 'reader_time_mixin.dart';
 
@@ -47,6 +50,7 @@ class ReaderScreenState extends State<ReaderScreen>
         ReaderTxtMixin<ReaderScreen>,
         ReaderNavigationMixin<ReaderScreen>,
         ReaderGestureMixin<ReaderScreen>,
+        ReaderBookmarkMixin<ReaderScreen>,
         ReaderOverlayMixin<ReaderScreen>,
         ReaderTimeMixin<ReaderScreen> {
   String get _flutterChapterContentKey => [
@@ -56,9 +60,121 @@ class ReaderScreenState extends State<ReaderScreen>
     isLoading ? 'loading' : 'ready',
   ].join('|');
 
+  static const _tocBookmarkModeSpacing = 96.0;
+  static const Curve _tocBookmarkSettleCurve = Cubic(0.16, 1.0, 0.30, 1.0);
+
+  double get tocBookmarkBasePosition => tocShowsBookmarks ? 1.0 : 0.0;
+
+  double get tocBookmarkVisualPosition =>
+      (tocBookmarkModePosition ?? tocBookmarkBasePosition)
+          .clamp(-0.18, 1.18)
+          .toDouble();
+
+  void _restoreSystemUi() {
+    SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.manual,
+      overlays: SystemUiOverlay.values,
+    );
+    SystemChrome.setSystemUIOverlayStyle(
+      SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: appPalette.background,
+        systemNavigationBarDividerColor: Colors.transparent,
+        statusBarIconBrightness: appPalette.isLight
+            ? Brightness.dark
+            : Brightness.light,
+        systemNavigationBarIconBrightness: appPalette.isLight
+            ? Brightness.dark
+            : Brightness.light,
+      ),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    });
+  }
+
+  void updateTocBookmarkDrag(double delta) {
+    tocBookmarkSettleAnimation.stop();
+    tocBookmarkSettle = null;
+    final current = tocBookmarkModePosition ?? tocBookmarkBasePosition;
+    final next = (current - delta / _tocBookmarkModeSpacing)
+        .clamp(-0.18, 1.18)
+        .toDouble();
+    tocBookmarkModePosition = next;
+    tocBookmarkVisualNotifier.value = tocBookmarkVisualPosition;
+  }
+
+  @override
+  void animateTocBookmarkModeTo(bool showBookmarks) {
+    final target = showBookmarks ? 1 : 0;
+    final current = tocBookmarkVisualPosition.clamp(0.0, 1.0).toDouble();
+    settleTocBookmarkDrag(target: target, from: current);
+  }
+
+  void settleTocBookmarkDrag({required int target, required double from}) {
+    tocBookmarkSettleAnimation.stop();
+    final start = from.clamp(-0.18, 1.18).toDouble();
+    final end = target.toDouble();
+    final distance = (end - start).abs();
+    if (distance <= 0.001) {
+      setState(() {
+        tocBookmarkModePosition = null;
+        tocBookmarkLastHapticTick = null;
+        tocShowsBookmarks = target == 1;
+      });
+      tocBookmarkVisualNotifier.value = tocBookmarkVisualPosition;
+      return;
+    }
+    tocBookmarkSettle = Tween<double>(begin: start, end: end).animate(
+      CurvedAnimation(
+        parent: tocBookmarkSettleAnimation,
+        curve: _tocBookmarkSettleCurve,
+      ),
+    );
+    tocBookmarkModePosition = start;
+    tocBookmarkVisualNotifier.value = tocBookmarkVisualPosition;
+    tocBookmarkSettleAnimation
+      ..duration = Duration(
+        milliseconds: (160 + distance * 180).clamp(170, 320).round(),
+      )
+      ..forward(from: 0).whenComplete(() {
+        if (!mounted) {
+          return;
+        }
+        tocBookmarkModePosition = null;
+        tocBookmarkLastHapticTick = null;
+        tocShowsBookmarks = target == 1;
+        tocBookmarkVisualNotifier.value = tocBookmarkVisualPosition;
+      });
+  }
+
+  void endTocBookmarkDrag(DragEndDetails details) {
+    final current = tocBookmarkModePosition ?? tocBookmarkBasePosition;
+    final velocityModes =
+        details.velocity.pixelsPerSecond.dx / _tocBookmarkModeSpacing;
+    final projected = (current - velocityModes * .045)
+        .clamp(-0.18, 1.18)
+        .toDouble();
+    final target = projected.clamp(0.0, 1.0).round().clamp(0, 1).toInt();
+    settleTocBookmarkDrag(target: target, from: current);
+  }
+
+  void cancelTocBookmarkDrag() {
+    final current = tocBookmarkModePosition;
+    if (current == null) {
+      return;
+    }
+    settleTocBookmarkDrag(
+      target: tocBookmarkBasePosition.round().clamp(0, 1).toInt(),
+      from: current,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    readerBook = widget.book;
     chromeAnimation = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 260),
@@ -76,6 +192,24 @@ class ReaderScreenState extends State<ReaderScreen>
       vsync: this,
       duration: const Duration(milliseconds: 240),
     );
+    bookmarkPullReturnAnimation = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 360),
+    );
+    bookmarkPullReturnAnimation.addListener(() {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+    tocBookmarkSettleAnimation = AnimationController(vsync: this)
+      ..addListener(() {
+        final animation = tocBookmarkSettle;
+        if (animation == null || !mounted) {
+          return;
+        }
+        tocBookmarkModePosition = animation.value;
+        tocBookmarkVisualNotifier.value = tocBookmarkVisualPosition;
+      });
     chapterIndex = widget.book.currentChapterIndex.clamp(0, lastChapterIndex);
     final savedPageCount = widget.book.pageCount < 1
         ? 1
@@ -92,22 +226,29 @@ class ReaderScreenState extends State<ReaderScreen>
       const Duration(seconds: 30),
       (_) => flushReadingTime(),
     );
-    clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted) {
-        setState(() => now = DateTime.now());
-      }
-    });
   }
 
   @override
   void dispose() {
+    _restoreSystemUi();
     flushReadingTime();
+    // Flush current reading position to disk immediately so progress is
+    // never lost even if the user exits the reader very quickly.
+    unawaited(
+      appState.updateBookProgress(
+        book: book,
+        chapterIndex: chapterIndex,
+        page: page,
+        pageCount: pageCount,
+        displayProgress: overallProgress,
+        force: true,
+      ),
+    );
     widget.state.settingsChanges.removeListener(onReaderStyleChanged);
     readingTimer?.cancel();
     styleInjectTimer?.cancel();
     txtPaginationTimer?.cancel();
     progressSeekTimer?.cancel();
-    clockTimer?.cancel();
     webEdgeTurnResetTimer?.cancel();
     txtScrollController.dispose();
     readerSnapshotImage?.evict();
@@ -116,6 +257,8 @@ class ReaderScreenState extends State<ReaderScreen>
     tocAnimation.dispose();
     settingsAnimation.dispose();
     footerAnimation.dispose();
+    bookmarkPullReturnAnimation.dispose();
+    tocBookmarkSettleAnimation.dispose();
     widget.state.refreshLibraryViews();
     super.dispose();
   }
@@ -144,150 +287,175 @@ class ReaderScreenState extends State<ReaderScreen>
                 fit: StackFit.expand,
                 children: [
                   Positioned.fill(
-                    child: usesFlutterTxt
-                        ? AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 180),
-                            reverseDuration: const Duration(milliseconds: 120),
-                            switchInCurve: Curves.easeOutCubic,
-                            switchOutCurve: Curves.easeInCubic,
-                            transitionBuilder: (child, animation) {
-                              return FadeTransition(
-                                opacity: animation,
-                                child: child,
-                              );
-                            },
-                            child: KeyedSubtree(
-                              key: ValueKey(_flutterChapterContentKey),
-                              child: buildFlutterTxtContent(
-                                chapter,
-                                systemPadding,
+                    child: AnimatedBuilder(
+                      animation: bookmarkPullReturnAnimation,
+                      builder: (context, child) {
+                        return Transform.translate(
+                          offset: Offset(0, readerContentPullOffset()),
+                          child: child,
+                        );
+                      },
+                      child: usesFlutterTxt
+                          ? AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 180),
+                              reverseDuration: const Duration(
+                                milliseconds: 120,
                               ),
-                            ),
-                          )
-                        : chapter.filePath.isEmpty
-                        ? MissingChapter(readerPalette: readerPalette)
-                        : Opacity(
-                            opacity: readerSnapshotImage != null ? 0 : 1,
-                            child: InAppWebView(
-                              key: ValueKey('reader-${book.id}'),
-                              initialUrlRequest: URLRequest(
-                                url: WebUri.uri(File(chapter.filePath).uri),
-                              ),
-                              initialSettings: InAppWebViewSettings(
-                                javaScriptEnabled: true,
-                                transparentBackground: false,
-                                useHybridComposition: true,
-                                useShouldOverrideUrlLoading: true,
-                                allowFileAccess: true,
-                                allowFileAccessFromFileURLs: true,
-                                allowUniversalAccessFromFileURLs: true,
-                                disableVerticalScroll: false,
-                                disableHorizontalScroll: true,
-                                supportZoom: false,
-                              ),
-                              onWebViewCreated: (ctrl) {
-                                readerLog(
-                                  'webview created chapter=$chapterIndex file=${chapter.filePath}',
-                                );
-                                controller = ctrl;
-                                ctrl.addJavaScriptHandler(
-                                  handlerName: 'squartorEvent',
-                                  callback: handleReaderEvent,
+                              switchInCurve: Curves.easeOutCubic,
+                              switchOutCurve: Curves.easeInCubic,
+                              transitionBuilder: (child, animation) {
+                                return FadeTransition(
+                                  opacity: animation,
+                                  child: child,
                                 );
                               },
-                              onLoadStop: (ctrl, url) async {
-                                readerLog('webview loadStop url=$url');
-                                if (url == null || !url.isScheme('file')) {
-                                  return;
-                                }
-                                final loadedPath = path.normalize(
-                                  url.uriValue.toFilePath(),
-                                );
-                                final currentChapterPath = path.normalize(
-                                  currentChapter.filePath,
-                                );
-                                if (loadedPath != currentChapterPath) {
+                              child: KeyedSubtree(
+                                key: ValueKey(_flutterChapterContentKey),
+                                child: buildFlutterTxtContent(
+                                  chapter,
+                                  systemPadding,
+                                ),
+                              ),
+                            )
+                          : chapter.filePath.isEmpty
+                          ? MissingChapter(readerPalette: readerPalette)
+                          : Opacity(
+                              opacity: readerSnapshotImage != null ? 0 : 1,
+                              child: InAppWebView(
+                                key: ValueKey('reader-${book.id}'),
+                                initialUrlRequest: URLRequest(
+                                  url: WebUri.uri(File(chapter.filePath).uri),
+                                ),
+                                initialSettings: InAppWebViewSettings(
+                                  javaScriptEnabled: true,
+                                  transparentBackground: false,
+                                  useHybridComposition: true,
+                                  useShouldOverrideUrlLoading: true,
+                                  allowFileAccess: true,
+                                  allowFileAccessFromFileURLs: true,
+                                  allowUniversalAccessFromFileURLs: true,
+                                  disableVerticalScroll: false,
+                                  disableHorizontalScroll: true,
+                                  supportZoom: false,
+                                ),
+                                onWebViewCreated: (ctrl) {
                                   readerLog(
-                                    'drop stale webview loadStop loaded=$loadedPath current=$currentChapterPath',
+                                    'webview created chapter=$chapterIndex file=${chapter.filePath}',
                                   );
-                                  return;
-                                }
-                                if (pendingWebLoadPath != null &&
-                                    pendingWebLoadPath != loadedPath) {
-                                  readerLog(
-                                    'drop unexpected webview loadStop loaded=$loadedPath pending=$pendingWebLoadPath',
+                                  controller = ctrl;
+                                  ctrl.addJavaScriptHandler(
+                                    handlerName: 'squartorEvent',
+                                    callback: handleReaderEvent,
                                   );
-                                  return;
-                                }
-                                if (url.fragment.isNotEmpty == true) {
-                                  pendingAnchor = decodeLooseUriComponent(
-                                    url.fragment,
+                                },
+                                onLoadStop: (ctrl, url) async {
+                                  readerLog('webview loadStop url=$url');
+                                  if (url == null || !url.isScheme('file')) {
+                                    return;
+                                  }
+                                  final loadedPath = path.normalize(
+                                    url.uriValue.toFilePath(),
                                   );
-                                }
-                                try {
-                                  await injectReaderStyle();
-                                } catch (error) {
-                                  readerLog('inject failed $error');
-                                  debugPrint(
-                                    'SQuartor inject style failed: $error',
+                                  final currentChapterPath = path.normalize(
+                                    currentChapter.filePath,
                                   );
-                                }
-                                if (mounted) {
-                                  setState(() {
-                                    pendingWebLoadPath = null;
-                                    isLoading = false;
-                                    loadError = null;
-                                  });
-                                  flushPendingProgressSeek();
-                                }
-                              },
-                              onReceivedError: (ctrl, request, error) {
-                                readerLog(
-                                  'webview error main=${request.isForMainFrame} ${error.description}',
-                                );
-                                if (request.isForMainFrame == true && mounted) {
-                                  setState(() {
-                                    isLoading = false;
-                                    loadError = error.description;
-                                    overlay = ReaderOverlay.chrome;
-                                  });
-                                }
-                              },
-                              onConsoleMessage: (ctrl, message) {
-                                debugPrint(
-                                  'SQuartor WebView: ${message.message}',
-                                );
-                              },
-                              shouldOverrideUrlLoading: (ctrl, action) async {
-                                final url = action.request.url;
-                                if (url == null) {
-                                  return NavigationActionPolicy.ALLOW;
-                                }
-                                if (isExternalUriString(url.toString())) {
-                                  unawaited(
-                                    openExternalLink(Uri.parse(url.toString())),
-                                  );
-                                  if (context.mounted &&
-                                      !isExternalUriString(url.toString())) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('外部链接第一版先不打开'),
-                                      ),
+                                  if (loadedPath != currentChapterPath) {
+                                    readerLog(
+                                      'drop stale webview loadStop loaded=$loadedPath current=$currentChapterPath',
+                                    );
+                                    return;
+                                  }
+                                  if (pendingWebLoadPath != null &&
+                                      pendingWebLoadPath != loadedPath) {
+                                    readerLog(
+                                      'drop unexpected webview loadStop loaded=$loadedPath pending=$pendingWebLoadPath',
+                                    );
+                                    return;
+                                  }
+                                  if (url.fragment.isNotEmpty == true) {
+                                    pendingAnchor = decodeLooseUriComponent(
+                                      url.fragment,
                                     );
                                   }
-                                  return NavigationActionPolicy.CANCEL;
-                                }
-                                return NavigationActionPolicy.ALLOW;
-                              },
+                                  try {
+                                    await injectReaderStyle();
+                                  } catch (error) {
+                                    readerLog('inject failed $error');
+                                    debugPrint(
+                                      'SQuartor inject style failed: $error',
+                                    );
+                                  }
+                                  if (mounted) {
+                                    setState(() {
+                                      pendingWebLoadPath = null;
+                                      isLoading = false;
+                                      loadError = null;
+                                    });
+                                    flushPendingProgressSeek();
+                                  }
+                                },
+                                onReceivedError: (ctrl, request, error) {
+                                  readerLog(
+                                    'webview error main=${request.isForMainFrame} ${error.description}',
+                                  );
+                                  if (request.isForMainFrame == true &&
+                                      mounted) {
+                                    setState(() {
+                                      isLoading = false;
+                                      loadError = error.description;
+                                      overlay = ReaderOverlay.chrome;
+                                    });
+                                  }
+                                },
+                                onConsoleMessage: (ctrl, message) {
+                                  debugPrint(
+                                    'SQuartor WebView: ${message.message}',
+                                  );
+                                },
+                                shouldOverrideUrlLoading: (ctrl, action) async {
+                                  final url = action.request.url;
+                                  if (url == null) {
+                                    return NavigationActionPolicy.ALLOW;
+                                  }
+                                  if (isExternalUriString(url.toString())) {
+                                    unawaited(
+                                      openExternalLink(
+                                        Uri.parse(url.toString()),
+                                      ),
+                                    );
+                                    if (context.mounted &&
+                                        !isExternalUriString(url.toString())) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('外部链接第一版先不打开'),
+                                        ),
+                                      );
+                                    }
+                                    return NavigationActionPolicy.CANCEL;
+                                  }
+                                  return NavigationActionPolicy.ALLOW;
+                                },
+                              ),
                             ),
-                          ),
+                    ),
                   ),
                   if (readerSnapshotImage case final image?)
                     Positioned.fill(
-                      child: Image(
-                        image: image,
-                        fit: BoxFit.cover,
-                        filterQuality: FilterQuality.low,
+                      child: AnimatedBuilder(
+                        animation: bookmarkPullReturnAnimation,
+                        builder: (context, child) {
+                          return Transform.translate(
+                            offset: Offset(0, readerContentPullOffset()),
+                            child: child,
+                          );
+                        },
+                        child: Image(
+                          image: image,
+                          fit: BoxFit.cover,
+                          filterQuality: FilterQuality.low,
+                        ),
                       ),
                     ),
                   if (!usesFlutterTxt)
@@ -296,6 +464,13 @@ class ReaderScreenState extends State<ReaderScreen>
                         behavior: HitTestBehavior.translucent,
                         onTapUp: onReaderTap,
                         onLongPressStart: onReaderLongPress,
+                        onVerticalDragStart: (details) => onBookmarkPullStart(
+                          details,
+                          MediaQuery.sizeOf(context),
+                        ),
+                        onVerticalDragUpdate: onBookmarkPullUpdate,
+                        onVerticalDragEnd: onBookmarkPullEnd,
+                        onVerticalDragCancel: onBookmarkPullCancel,
                         onHorizontalDragStart: onReaderDragStart,
                         onHorizontalDragUpdate: onReaderDragUpdate,
                         onHorizontalDragEnd: onReaderDragEnd,
@@ -350,7 +525,7 @@ class ReaderScreenState extends State<ReaderScreen>
                     Positioned(
                       left: 16,
                       right: 16,
-                      bottom: systemPadding.bottom + 8,
+                      bottom: systemPadding.bottom + 18,
                       child: IgnorePointer(
                         child: AnimatedBuilder(
                           animation: footerAnimation,
@@ -363,7 +538,6 @@ class ReaderScreenState extends State<ReaderScreen>
                             );
                           },
                           child: ReaderFooter(
-                            now: now,
                             chapter: chapterIndex + 1,
                             chapterCount: book.chapters.length,
                             page: page + 1,
@@ -388,14 +562,21 @@ class ReaderScreenState extends State<ReaderScreen>
                     readerPalette: readerPalette,
                     onDismiss: hideFootnote,
                   ),
+                  ReaderBookmarkPullOverlay(
+                    pullDy: bookmarkPullDy,
+                    active: bookmarkPullActive,
+                    committed: bookmarkPullCommitted,
+                    hasBookmark: currentPageBookmarked,
+                    palette: appPalette,
+                    readerPalette: readerPalette,
+                    systemPadding: systemPadding,
+                  ),
                   if (usesVerticalScroll &&
-                      !usesFlutterTxt &&
-                      webEdgeTurnProgress > 0)
+                      scrollEdgeTurnDirection != null &&
+                      scrollEdgeTurnProgress > 0)
                     ScrollEdgeTurnHintPositioned(
-                      direction: webEdgeTurnDirection == 'previous'
-                          ? ScrollEdgeTurnDirection.previous
-                          : ScrollEdgeTurnDirection.next,
-                      progress: webEdgeTurnProgress,
+                      direction: scrollEdgeTurnDirection!,
+                      progress: scrollEdgeTurnProgress,
                       readerPalette: readerPalette,
                       palette: appPalette,
                       systemPadding: systemPadding,
@@ -422,6 +603,77 @@ class ReaderScreenState extends State<ReaderScreen>
                           final panelHeight = (availableHeight * .72)
                               .clamp(390.0, 720.0)
                               .toDouble();
+                          Widget buildTocPanelCard(
+                            bool showBookmarks, {
+                            double blurSigma = 34,
+                            bool transparent = false,
+                          }) {
+                            return FloatingPanelSurface(
+                              key: ValueKey(
+                                showBookmarks
+                                    ? 'toc-card-bookmarks-$chapterIndex'
+                                    : 'toc-card-chapters-$chapterIndex',
+                              ),
+                              palette: appPalette,
+                              blurSigma: blurSigma,
+                              transparent: transparent,
+                              child: ReaderTocDrawer(
+                                book: book,
+                                chapterIndex: chapterIndex,
+                                showBookmarks: showBookmarks,
+                                currentPageCount: pageCount,
+                                cachedPageCounts: const <int, int>{},
+                                palette: appPalette,
+                                onChapterSelected: (index) {
+                                  unawaited(goToChapter(index));
+                                  hideOverlay();
+                                },
+                                onBookmarkSelected: (bookmark) {
+                                  final progress = bookmark.pageCount <= 1
+                                      ? bookmark.progress
+                                      : bookmark.page /
+                                            (bookmark.pageCount - 1);
+                                  unawaited(
+                                    goToChapter(
+                                      bookmark.chapterIndex,
+                                      progress: progress.clamp(0.0, 1.0),
+                                    ),
+                                  );
+                                  hideOverlay();
+                                },
+                              ),
+                            );
+                          }
+
+                          final tocBookmarkPanelGap = (panelWidth * .08)
+                              .clamp(22.0, 44.0)
+                              .toDouble();
+                          final tocBookmarkPanelTravel =
+                              panelWidth + tocBookmarkPanelGap;
+                          Widget buildTocSlidingPage({
+                            required bool showBookmarks,
+                            required double offsetX,
+                            required double currentPos,
+                          }) {
+                            final pagePosition = showBookmarks ? 1.0 : 0.0;
+                            return Transform.translate(
+                              offset: Offset(offsetX, 0),
+                              child: IgnorePointer(
+                                ignoring:
+                                    (currentPos - pagePosition).abs() > .55,
+                                child: RepaintBoundary(
+                                  child: SizedBox.expand(
+                                    child: buildTocPanelCard(
+                                      showBookmarks,
+                                      blurSigma: 0,
+                                      transparent: true,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+
                           return AnimatedBuilder(
                             animation: tocAnimation,
                             builder: (context, child) {
@@ -453,16 +705,34 @@ class ReaderScreenState extends State<ReaderScreen>
                                   child: RepaintBoundary(
                                     child: FloatingPanelSurface(
                                       palette: appPalette,
-                                      child: ReaderTocDrawer(
-                                        key: ValueKey('toc-$chapterIndex'),
-                                        book: book,
-                                        chapterIndex: chapterIndex,
-                                        currentPageCount: pageCount,
-                                        cachedPageCounts: const <int, int>{},
-                                        palette: appPalette,
-                                        onChapterSelected: (index) {
-                                          unawaited(goToChapter(index));
-                                          hideOverlay();
+                                      blurSigma: 12,
+                                      child: ValueListenableBuilder<double>(
+                                        valueListenable:
+                                            tocBookmarkVisualNotifier,
+                                        builder: (context, value, _) {
+                                          final pos = value.clamp(0.0, 1.0);
+                                          return ClipRect(
+                                            child: Stack(
+                                              fit: StackFit.expand,
+                                              clipBehavior: Clip.hardEdge,
+                                              children: [
+                                                buildTocSlidingPage(
+                                                  showBookmarks: false,
+                                                  offsetX:
+                                                      -pos *
+                                                      tocBookmarkPanelTravel,
+                                                  currentPos: pos,
+                                                ),
+                                                buildTocSlidingPage(
+                                                  showBookmarks: true,
+                                                  offsetX:
+                                                      (1 - pos) *
+                                                      tocBookmarkPanelTravel,
+                                                  currentPos: pos,
+                                                ),
+                                              ],
+                                            ),
+                                          );
                                         },
                                       ),
                                     ),
@@ -528,6 +798,7 @@ class ReaderScreenState extends State<ReaderScreen>
                                   child: RepaintBoundary(
                                     child: FloatingPanelSurface(
                                       palette: appPalette,
+                                      blurSigma: 12,
                                       child: ReaderSettingsSheet(
                                         state: widget.state,
                                         onChanged: scheduleStyleInjection,
@@ -555,6 +826,7 @@ class ReaderScreenState extends State<ReaderScreen>
                           chromeAnimation,
                           tocAnimation,
                           settingsAnimation,
+                          tocBookmarkVisualNotifier,
                         ]),
                         builder: (context, child) {
                           final sideActive =
@@ -582,6 +854,11 @@ class ReaderScreenState extends State<ReaderScreen>
                                 pageCount: pageCount,
                                 progress: overallProgress,
                                 overlay: overlay,
+                                tocShowsBookmarks: tocShowsBookmarks,
+                                tocBookmarkModePosition:
+                                    overlay == ReaderOverlay.toc
+                                    ? tocBookmarkVisualPosition
+                                    : 0,
                                 currentChapter: chapterIndex,
                                 chapterCount: book.chapters.length,
                                 tocProgress: tocAnimation,
@@ -590,11 +867,15 @@ class ReaderScreenState extends State<ReaderScreen>
                                 readerPalette: readerPalette,
                                 appPalette: appPalette,
                                 onToc: showToc,
+                                onTocModeDragUpdate: updateTocBookmarkDrag,
+                                onTocModeDragEnd: endTocBookmarkDrag,
+                                onTocModeDragCancel: cancelTocBookmarkDrag,
                                 onPreviousChapter: () =>
                                     goToChapter(chapterIndex - 1, atEnd: true),
                                 onNextChapter: () =>
                                     goToChapter(chapterIndex + 1),
-                                onProgressSeek: seekToOverallProgress,
+                                onProgressChapterSeek:
+                                    requestProgressSeekToChapter,
                                 onProgressScrubStart: cancelPendingProgressSeek,
                                 onSettings: showSettings,
                                 onProgressPressed: () {

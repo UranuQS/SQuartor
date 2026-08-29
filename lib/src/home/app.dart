@@ -1,3 +1,4 @@
+import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
@@ -57,105 +58,123 @@ class _SQuartorAppState extends State<SQuartorApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: widget.state.appChanges,
-      builder: (context, _) {
-        final palette = widget.state.palette;
-        final brightness = widget.state.effectiveBrightness;
-        final appFontFamily = widget.state.appFontFamily ?? 'sans';
-        return MaterialApp(
-          navigatorKey: _navigatorKey,
-          title: 'SQuartor',
-          debugShowCheckedModeBanner: false,
-          theme: ThemeData(
-            useMaterial3: true,
-            brightness: brightness,
-            scaffoldBackgroundColor: palette.background,
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: palette.primary,
-              brightness: brightness,
-              primary: palette.primary,
-              secondary: palette.primarySoft,
-              surface: palette.surface,
-              onPrimary: Colors.white,
-              onSurface: palette.text,
-            ),
-            fontFamily: appFontFamily,
-            fontFamilyFallback: const ['sans'],
-            splashFactory: NoSplash.splashFactory,
-            splashColor: Colors.transparent,
-            highlightColor: Colors.transparent,
-            hoverColor: Colors.transparent,
-            focusColor: Colors.transparent,
-            textTheme: ThemeData(brightness: brightness).textTheme.apply(
-              fontFamily: appFontFamily,
-              bodyColor: palette.text,
-              displayColor: palette.text,
-            ),
-            navigationBarTheme: NavigationBarThemeData(
-              labelTextStyle: WidgetStateProperty.resolveWith((states) {
-                final selected = states.contains(WidgetState.selected);
-                return TextStyle(
-                  color: selected ? palette.text : palette.muted,
-                  fontSize: 13,
-                  fontWeight: selected
-                      ? AppTextWeight.medium
-                      : AppTextWeight.regular,
-                );
-              }),
-              iconTheme: WidgetStateProperty.resolveWith((states) {
-                final selected = states.contains(WidgetState.selected);
-                return IconThemeData(
-                  color: selected ? palette.text : palette.muted,
-                  size: selected ? 25 : 24,
-                );
-              }),
-            ),
-            pageTransitionsTheme: const PageTransitionsTheme(
-              builders: {
-                TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
-              },
-            ),
-          ),
-          builder: (context, child) {
-            final mediaQuery = MediaQuery.of(context);
-            return MediaQuery(
-              data: mediaQuery.copyWith(
-                textScaler: TextScaler.linear(_appUiTextScale),
+    return DynamicColorBuilder(
+      builder: (lightDynamic, darkDynamic) {
+        final dynamicSeed =
+            (widget.state.effectiveBrightness == Brightness.dark
+                    ? darkDynamic
+                    : lightDynamic)
+                ?.primary;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            widget.state.setDynamicThemeSeedColor(dynamicSeed);
+          }
+        });
+        return AnimatedBuilder(
+          animation: widget.state.appChanges,
+          builder: (context, _) {
+            final palette = widget.state.palette;
+            final brightness = widget.state.effectiveBrightness;
+            final appFontFamily = widget.state.appFontFamily ?? 'sans';
+            final baseTextTheme = ThemeData(brightness: brightness).textTheme;
+            final appTextTheme = _weightedTextTheme(
+              baseTextTheme.apply(
+                fontFamily: appFontFamily,
+                bodyColor: palette.text,
+                displayColor: palette.text,
               ),
-              child: child ?? const SizedBox.shrink(),
             );
-          },
-          home: HomeShell(state: widget.state),
-          onGenerateRoute: (settings) {
-            if (settings.name != ReaderScreen.routeName) {
-              return null;
-            }
-            final book = settings.arguments! as BookEntry;
-            return PageRouteBuilder<void>(
-              settings: settings,
-              transitionDuration: const Duration(milliseconds: 220),
-              reverseTransitionDuration: const Duration(milliseconds: 180),
-              pageBuilder: (_, animation, secondaryAnimation) =>
-                  ReaderScreen(state: widget.state, book: book),
-              transitionsBuilder:
-                  (context, animation, secondaryAnimation, child) {
-                    final curved = CurvedAnimation(
-                      parent: animation,
-                      curve: Curves.easeOutCubic,
-                      reverseCurve: Curves.easeInCubic,
+            return MaterialApp(
+              navigatorKey: _navigatorKey,
+              title: 'SQuartor',
+              debugShowCheckedModeBanner: false,
+              theme: ThemeData(
+                useMaterial3: true,
+                brightness: brightness,
+                scaffoldBackgroundColor: palette.background,
+                colorScheme: ColorScheme.fromSeed(
+                  seedColor: palette.primary,
+                  brightness: brightness,
+                  primary: palette.primary,
+                  secondary: palette.primarySoft,
+                  surface: palette.surface,
+                  onPrimary: Colors.white,
+                  onSurface: palette.text,
+                ),
+                fontFamily: appFontFamily,
+                fontFamilyFallback: const ['sans'],
+                splashFactory: NoSplash.splashFactory,
+                splashColor: Colors.transparent,
+                highlightColor: Colors.transparent,
+                hoverColor: Colors.transparent,
+                focusColor: Colors.transparent,
+                textTheme: appTextTheme,
+                navigationBarTheme: NavigationBarThemeData(
+                  labelTextStyle: WidgetStateProperty.resolveWith((states) {
+                    final selected = states.contains(WidgetState.selected);
+                    return TextStyle(
+                      color: selected ? palette.text : palette.muted,
+                      fontSize: 13,
+                      fontWeight: selected
+                          ? AppTextWeight.medium
+                          : AppTextWeight.regular,
                     );
-                    return FadeTransition(
-                      opacity: curved,
-                      child: SlideTransition(
-                        position: Tween<Offset>(
-                          begin: const Offset(0.025, 0),
-                          end: Offset.zero,
-                        ).animate(curved),
-                        child: child,
-                      ),
+                  }),
+                  iconTheme: WidgetStateProperty.resolveWith((states) {
+                    final selected = states.contains(WidgetState.selected);
+                    return IconThemeData(
+                      color: selected ? palette.text : palette.muted,
+                      size: selected ? 25 : 24,
                     );
+                  }),
+                ),
+                pageTransitionsTheme: const PageTransitionsTheme(
+                  builders: {
+                    TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
                   },
+                ),
+              ),
+              builder: (context, child) {
+                final mediaQuery = MediaQuery.of(context);
+                return MediaQuery(
+                  data: mediaQuery.copyWith(
+                    textScaler: TextScaler.linear(_appUiTextScale),
+                  ),
+                  child: child ?? const SizedBox.shrink(),
+                );
+              },
+              home: HomeShell(state: widget.state),
+              onGenerateRoute: (settings) {
+                if (settings.name != ReaderScreen.routeName) {
+                  return null;
+                }
+                final book = settings.arguments! as BookEntry;
+                return PageRouteBuilder<void>(
+                  settings: settings,
+                  transitionDuration: const Duration(milliseconds: 220),
+                  reverseTransitionDuration: const Duration(milliseconds: 180),
+                  pageBuilder: (_, animation, secondaryAnimation) =>
+                      ReaderScreen(state: widget.state, book: book),
+                  transitionsBuilder:
+                      (context, animation, secondaryAnimation, child) {
+                        final curved = CurvedAnimation(
+                          parent: animation,
+                          curve: Curves.easeOutCubic,
+                          reverseCurve: Curves.easeInCubic,
+                        );
+                        return FadeTransition(
+                          opacity: curved,
+                          child: SlideTransition(
+                            position: Tween<Offset>(
+                              begin: const Offset(0.025, 0),
+                              end: Offset.zero,
+                            ).animate(curved),
+                            child: child,
+                          ),
+                        );
+                      },
+                );
+              },
             );
           },
         );
@@ -182,4 +201,36 @@ class _SQuartorAppState extends State<SQuartorApp> with WidgetsBindingObserver {
       _handlingExternalOpen = false;
     }
   }
+}
+
+TextTheme _weightedTextTheme(TextTheme theme) {
+  return theme.copyWith(
+    displayLarge: theme.displayLarge?.copyWith(
+      fontWeight: AppTextWeight.semibold,
+    ),
+    displayMedium: theme.displayMedium?.copyWith(
+      fontWeight: AppTextWeight.semibold,
+    ),
+    displaySmall: theme.displaySmall?.copyWith(
+      fontWeight: AppTextWeight.semibold,
+    ),
+    headlineLarge: theme.headlineLarge?.copyWith(
+      fontWeight: AppTextWeight.semibold,
+    ),
+    headlineMedium: theme.headlineMedium?.copyWith(
+      fontWeight: AppTextWeight.semibold,
+    ),
+    headlineSmall: theme.headlineSmall?.copyWith(
+      fontWeight: AppTextWeight.semibold,
+    ),
+    titleLarge: theme.titleLarge?.copyWith(fontWeight: AppTextWeight.semibold),
+    titleMedium: theme.titleMedium?.copyWith(fontWeight: AppTextWeight.medium),
+    titleSmall: theme.titleSmall?.copyWith(fontWeight: AppTextWeight.medium),
+    bodyLarge: theme.bodyLarge?.copyWith(fontWeight: AppTextWeight.regular),
+    bodyMedium: theme.bodyMedium?.copyWith(fontWeight: AppTextWeight.regular),
+    bodySmall: theme.bodySmall?.copyWith(fontWeight: AppTextWeight.regular),
+    labelLarge: theme.labelLarge?.copyWith(fontWeight: AppTextWeight.medium),
+    labelMedium: theme.labelMedium?.copyWith(fontWeight: AppTextWeight.regular),
+    labelSmall: theme.labelSmall?.copyWith(fontWeight: AppTextWeight.regular),
+  );
 }

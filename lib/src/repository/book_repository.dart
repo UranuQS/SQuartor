@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:gbk_codec/gbk_codec.dart';
+import 'package:html/parser.dart' as html_parser;
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -25,6 +26,7 @@ class BookRepository {
   static const _fontsKey = 'fonts.v1';
   static const _readingStatsKey = 'reading_stats.v1';
   static const _shelvesKey = 'shelves.v1';
+  static const _cloudSyncSettingsKey = 'cloud_sync_settings.v1';
   static const _androidPickerChannel = MethodChannel('squartor/native_picker');
 
   Future<SharedPreferences>? _prefsFuture;
@@ -45,6 +47,9 @@ class BookRepository {
       shelves: _decodeShelves(prefs.getString(_shelvesKey)),
       readingStats: _decodeReadingStats(prefs.getString(_readingStatsKey)),
       style: _decodeStyle(prefs.getString(_styleKey)),
+      cloudSyncSettings: _decodeCloudSyncSettings(
+        prefs.getString(_cloudSyncSettingsKey),
+      ),
     );
   }
 
@@ -105,6 +110,16 @@ class BookRepository {
     await prefs.setString(_shelvesKey, jsonEncode(shelves));
   }
 
+  Future<CloudSyncSettings> loadCloudSyncSettings() async {
+    final prefs = await _prefs();
+    return _decodeCloudSyncSettings(prefs.getString(_cloudSyncSettingsKey));
+  }
+
+  Future<void> saveCloudSyncSettings(CloudSyncSettings settings) async {
+    final prefs = await _prefs();
+    await prefs.setString(_cloudSyncSettingsKey, jsonEncode(settings.toJson()));
+  }
+
   List<BookEntry> _decodeBooks(String? raw) {
     if (raw == null || raw.isEmpty) {
       return const [];
@@ -129,6 +144,17 @@ class BookRepository {
       return ReadingStyle.fromJson(decoded.cast<String, Object?>());
     }
     return const ReadingStyle();
+  }
+
+  CloudSyncSettings _decodeCloudSyncSettings(String? raw) {
+    if (raw == null || raw.isEmpty) {
+      return const CloudSyncSettings();
+    }
+    final decoded = jsonDecode(raw);
+    if (decoded is Map) {
+      return CloudSyncSettings.fromJson(decoded.cast<String, Object?>());
+    }
+    return const CloudSyncSettings();
   }
 
   List<ImportedFont> _decodeFonts(String? raw) {
@@ -336,12 +362,12 @@ class BookRepository {
     await source.copy(target.path);
 
     final title = path.basenameWithoutExtension(source.path);
-    final text = _decodeText(await target.readAsBytes());
     final chapters = await TxtParser.prepareTxtReader(
       sourceFile: target,
       bookDir: bookDir,
       title: title,
       decodeText: _decodeText,
+      estimateWordCount: _estimateWordCount,
     );
 
     return BookEntry(
@@ -353,7 +379,7 @@ class BookRepository {
       sourcePath: target.path,
       importedAt: DateTime.now(),
       chapters: chapters,
-      wordCount: _estimateWordCount(text),
+      wordCount: _sumChapterWordCounts(chapters),
     );
   }
 
@@ -406,10 +432,11 @@ class BookRepository {
       path.basenameWithoutExtension(source.path),
       decodeText: _decodeText,
     );
-    final wordCount = await EpubParser.estimateGeneratedWordCount(
+    final chapters = await EpubParser.estimateGeneratedChapterWordCounts(
       meta.chapters,
       estimateWordCount: _estimateWordCount,
     );
+    final wordCount = _sumChapterWordCounts(chapters);
     return BookEntry(
       id: id,
       title: meta.title,
@@ -418,7 +445,7 @@ class BookRepository {
       bookDir: bookDir.path,
       sourcePath: target.path,
       importedAt: DateTime.now(),
-      chapters: meta.chapters,
+      chapters: chapters,
       coverPath: meta.coverPath,
       wordCount: wordCount,
     );
@@ -456,26 +483,27 @@ class BookRepository {
           book.title,
           decodeText: _decodeText,
         );
+        final chapters = await EpubParser.estimateGeneratedChapterWordCounts(
+          meta.chapters,
+          estimateWordCount: _estimateWordCount,
+        );
         final oldHref = book.safeCurrentChapter.href.split('#').first;
-        final matchingIndex = meta.chapters.indexWhere(
+        final matchingIndex = chapters.indexWhere(
           (chapter) => chapter.href.split('#').first == oldHref,
         );
-        final proportionalIndex = meta.chapters.isEmpty
+        final proportionalIndex = chapters.isEmpty
             ? 0
-            : (book.progress * meta.chapters.length).floor().clamp(
+            : (book.progress * chapters.length).floor().clamp(
                 0,
-                meta.chapters.length - 1,
+                chapters.length - 1,
               );
         upgraded.add(
           book.copyWith(
             title: meta.title,
             author: meta.author,
-            chapters: meta.chapters,
+            chapters: chapters,
             coverPath: meta.coverPath,
-            wordCount: await EpubParser.estimateGeneratedWordCount(
-              meta.chapters,
-              estimateWordCount: _estimateWordCount,
-            ),
+            wordCount: _sumChapterWordCounts(chapters),
             currentChapterIndex: matchingIndex >= 0
                 ? matchingIndex
                 : proportionalIndex,
@@ -532,6 +560,7 @@ class BookRepository {
           bookDir: Directory(book.bookDir),
           title: book.title,
           decodeText: _decodeText,
+          estimateWordCount: _estimateWordCount,
         );
         final oldTitle = book.safeCurrentChapter.title;
         final matchingIndex = chapters.indexWhere(
@@ -546,9 +575,7 @@ class BookRepository {
         upgraded.add(
           book.copyWith(
             chapters: chapters,
-            wordCount: _estimateWordCount(
-              _decodeText(await sourceFile.readAsBytes()),
-            ),
+            wordCount: _sumChapterWordCounts(chapters),
             currentChapterIndex: matchingIndex >= 0
                 ? matchingIndex
                 : proportionalIndex,
@@ -572,19 +599,22 @@ class BookRepository {
     var changed = false;
     final upgraded = <BookEntry>[];
     for (final book in books) {
-      if (book.wordCount != null && book.wordCount! > 0) {
+      if (book.wordCount != null &&
+          book.wordCount! > 0 &&
+          book.chapters.every((chapter) => chapter.wordCount != null)) {
         upgraded.add(book);
         continue;
       }
       try {
-        final wordCount = book.format == BookFormat.txt
-            ? await _estimateTxtBookWordCount(book)
-            : await EpubParser.estimateGeneratedWordCount(
+        final chapters = book.format == BookFormat.txt
+            ? await _estimateTxtChapterWordCounts(book)
+            : await EpubParser.estimateGeneratedChapterWordCounts(
                 book.chapters,
                 estimateWordCount: _estimateWordCount,
               );
+        final wordCount = _sumChapterWordCounts(chapters);
         if (wordCount > 0) {
-          upgraded.add(book.copyWith(wordCount: wordCount));
+          upgraded.add(book.copyWith(chapters: chapters, wordCount: wordCount));
           changed = true;
         } else {
           upgraded.add(book);
@@ -599,12 +629,50 @@ class BookRepository {
     return upgraded;
   }
 
-  Future<int> _estimateTxtBookWordCount(BookEntry book) async {
+  Future<List<ReaderChapter>> _estimateTxtChapterWordCounts(
+    BookEntry book,
+  ) async {
+    final chapters = <ReaderChapter>[];
+    for (final chapter in book.chapters) {
+      final file = File(chapter.filePath);
+      if (!await file.exists()) {
+        chapters.add(chapter);
+        continue;
+      }
+      try {
+        final document = html_parser.parse(await file.readAsString());
+        final text =
+            document.body?.text ?? document.documentElement?.text ?? '';
+        chapters.add(chapter.copyWith(wordCount: _estimateWordCount(text)));
+      } catch (_) {
+        chapters.add(chapter);
+      }
+    }
+    if (chapters.any((chapter) => (chapter.wordCount ?? 0) > 0)) {
+      return chapters;
+    }
     final sourceFile = File(book.sourcePath);
     if (!await sourceFile.exists()) {
-      return 0;
+      return book.chapters;
     }
-    return _estimateWordCount(_decodeText(await sourceFile.readAsBytes()));
+    final total = _estimateWordCount(
+      _decodeText(await sourceFile.readAsBytes()),
+    );
+    if (book.chapters.isEmpty || total <= 0) {
+      return book.chapters;
+    }
+    final average = (total / book.chapters.length).round().clamp(1, total);
+    return book.chapters
+        .map((chapter) => chapter.copyWith(wordCount: average))
+        .toList();
+  }
+
+  int _sumChapterWordCounts(List<ReaderChapter> chapters) {
+    return chapters.fold<int>(
+      0,
+      (sum, chapter) =>
+          sum + ((chapter.wordCount ?? 0) > 0 ? chapter.wordCount! : 0),
+    );
   }
 
   int _estimateWordCount(String text) {

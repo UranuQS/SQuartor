@@ -41,17 +41,35 @@ class SettingsGroup extends StatelessWidget {
             ),
           ),
         ),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(22),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: palette.card,
-              borderRadius: BorderRadius.circular(22),
-            ),
-            child: Column(children: entries),
-          ),
-        ),
+        _entryCards(),
       ],
+    );
+  }
+
+  Widget _entryCards() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: palette.card,
+          borderRadius: BorderRadius.circular(22),
+        ),
+        child: Column(
+          children: [
+            for (var index = 0; index < entries.length; index++) ...[
+              if (index > 0)
+                Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: palette.cardAlt,
+                  indent: 71,
+                  endIndent: 16,
+                ),
+              entries[index],
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -64,6 +82,7 @@ class SettingEntry extends StatelessWidget {
     required this.subtitle,
     required this.palette,
     required this.onTap,
+    this.iconColor,
   });
 
   final IconData icon;
@@ -71,6 +90,7 @@ class SettingEntry extends StatelessWidget {
   final String subtitle;
   final AppPalette palette;
   final VoidCallback onTap;
+  final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -87,10 +107,12 @@ class SettingEntry extends StatelessWidget {
               width: 42,
               height: 42,
               decoration: BoxDecoration(
-                color: palette.cardAlt,
+                color: iconColor != null
+                    ? iconColor!.withValues(alpha: 0.15)
+                    : palette.cardAlt,
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(icon, color: palette.muted, size: 24),
+              child: Icon(icon, color: iconColor ?? palette.muted, size: 24),
             ),
             const SizedBox(width: 13),
             Expanded(
@@ -184,6 +206,13 @@ class ChoicePill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasColor = color != null;
+    final backgroundColor = selected
+        ? (hasColor ? palette.cardAlt : palette.primary)
+        : palette.cardAlt;
+    final foregroundColor = selected
+        ? (hasColor ? palette.text : Colors.white)
+        : palette.muted;
     return InkWell(
       borderRadius: BorderRadius.circular(999),
       onTap: () {
@@ -194,8 +223,11 @@ class ChoicePill extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
         decoration: BoxDecoration(
-          color: selected ? palette.primary : palette.cardAlt,
+          color: backgroundColor,
           borderRadius: BorderRadius.circular(999),
+          border: hasColor && selected
+              ? Border.all(color: palette.primarySoft.withValues(alpha: .72))
+              : null,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -204,16 +236,25 @@ class ChoicePill extends StatelessWidget {
               Container(
                 width: 13,
                 height: 13,
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                decoration: BoxDecoration(
+                  color: color,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: palette.text.withValues(alpha: selected ? .72 : .18),
+                    width: selected ? 1.4 : 1,
+                  ),
+                ),
               ),
               const SizedBox(width: 8),
             ],
             Text(
               label,
               style: TextStyle(
-                color: selected ? Colors.white : palette.muted,
+                color: foregroundColor,
                 fontSize: 13,
-                fontWeight: AppTextWeight.regular,
+                fontWeight: selected
+                    ? AppTextWeight.medium
+                    : AppTextWeight.regular,
               ),
             ),
           ],

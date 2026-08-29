@@ -34,11 +34,11 @@ class _ShelfScreenState extends State<ShelfScreen> {
   String _selectedShelf = defaultShelfName;
   var _sortMode = ShelfSortMode.name;
   final Set<String> _selectedBookIds = {};
-  final Set<String> _expandedBlockKeys = {};
   final List<String> _manualSelectionHistory = [];
   final List<Set<String>> _selectionUndoStack = [];
   List<String> _visibleBookIds = const [];
   var _reportedSelectionMode = false;
+  final _shelfMenuLayerLink = LayerLink();
 
   bool get _selectionMode => _selectedBookIds.isNotEmpty;
 
@@ -81,7 +81,7 @@ class _ShelfScreenState extends State<ShelfScreen> {
             CustomScrollView(
               slivers: [
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 30, 20, 8),
+                  padding: const EdgeInsets.fromLTRB(20, 30, 20, 12),
                   sliver: SliverToBoxAdapter(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -106,19 +106,28 @@ class _ShelfScreenState extends State<ShelfScreen> {
                                 ],
                               ),
                             ),
-                            CircleButton(
-                              palette: palette,
-                              icon: _selectionMode
-                                  ? Icons.close_rounded
-                                  : Icons.more_vert_rounded,
-                              onTap: () {
-                                HapticFeedback.selectionClick();
-                                if (_selectionMode) {
-                                  setState(_clearSelection);
-                                } else {
-                                  _showShelfMenu(context);
-                                }
-                              },
+                            Builder(
+                              builder: (buttonContext) =>
+                                  CompositedTransformTarget(
+                                    link: _shelfMenuLayerLink,
+                                    child: CircleButton(
+                                      palette: palette,
+                                      icon: _selectionMode
+                                          ? Icons.close_rounded
+                                          : Icons.more_vert_rounded,
+                                      onTap: () {
+                                        HapticFeedback.selectionClick();
+                                        if (_selectionMode) {
+                                          setState(_clearSelection);
+                                        } else {
+                                          _showShelfMenu(
+                                            context,
+                                            anchorLink: _shelfMenuLayerLink,
+                                          );
+                                        }
+                                      },
+                                    ),
+                                  ),
                             ),
                           ],
                         ),
@@ -132,7 +141,7 @@ class _ShelfScreenState extends State<ShelfScreen> {
                             _clearSelection();
                           }),
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 22),
                         Row(
                           children: [
                             Icon(
@@ -154,7 +163,7 @@ class _ShelfScreenState extends State<ShelfScreen> {
                           ],
                         ),
                       ],
-                    ),
+                      ),
                   ),
                 ),
                 if (state.loading)
@@ -197,49 +206,15 @@ class _ShelfScreenState extends State<ShelfScreen> {
                       contentBottomPadding,
                     ),
                     sliver: blockDisplay
-                        ? SliverList.separated(
-                            itemCount: bookBlocks.length,
-                            separatorBuilder: (_, _) =>
-                                const SizedBox(height: 16),
-                            itemBuilder: (context, index) {
-                              final block = bookBlocks[index];
-                              final expanded = _expandedBlockKeys.contains(
-                                block.key,
-                              );
-                              return BookBlockCard(
-                                block: block,
-                                palette: palette,
-                                expanded: expanded,
-                                selectionMode: _selectionMode,
-                                selectedBookIds: _selectedBookIds,
-                                onToggle: () {
-                                  HapticFeedback.selectionClick();
-                                  setState(() {
-                                    if (expanded) {
-                                      _expandedBlockKeys.remove(block.key);
-                                    } else {
-                                      _expandedBlockKeys.add(block.key);
-                                    }
-                                  });
-                                },
-                                onOpenBook: (book) {
-                                  if (_selectionMode) {
-                                    HapticFeedback.selectionClick();
-                                    _toggleSelection(book);
-                                  } else {
-                                    _openBook(book);
-                                  }
-                                },
-                                onLongPressBook: (book) {
-                                  if (_selectionMode) {
-                                    HapticFeedback.selectionClick();
-                                    _toggleSelection(book);
-                                  } else {
-                                    _showBookMenu(context, book);
-                                  }
-                                },
-                              );
-                            },
+                        ? SliverToBoxAdapter(
+                            child: _BookBlockMasonry(
+                              blocks: bookBlocks,
+                              palette: palette,
+                              selectionMode: _selectionMode,
+                              selectedBookIds: _selectedBookIds,
+                              onTapBlock: _handleBookBlockTap,
+                              onLongPressBlock: _handleBookBlockLongPress,
+                            ),
                           )
                         : SliverList.separated(
                             itemCount: visibleBooks.length,
@@ -262,7 +237,11 @@ class _ShelfScreenState extends State<ShelfScreen> {
                                 },
                                 onLongPress: () {
                                   HapticFeedback.mediumImpact();
-                                  _showBookMenu(context, book);
+                                  if (_selectionMode) {
+                                    _toggleSelection(book);
+                                  } else {
+                                    _showBookMenu(context, book);
+                                  }
                                 },
                               );
                             },
@@ -319,6 +298,265 @@ class _ShelfScreenState extends State<ShelfScreen> {
     );
   }
 
+  Future<void> _showBookBlockPanel(
+    BuildContext context,
+    ShelfBookBlock block,
+  ) async {
+    final palette = widget.state.palette;
+    await showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: '关闭',
+      barrierColor: Colors.black.withValues(alpha: palette.isLight ? .18 : .42),
+      transitionDuration: const Duration(milliseconds: 260),
+      pageBuilder: (dialogContext, _, _) {
+        void closeThen(VoidCallback action) {
+          Navigator.of(dialogContext).pop();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              action();
+            }
+          });
+        }
+
+        return BookBlockExpandedPanel(
+          block: block,
+          palette: palette,
+          selectionMode: _selectionMode,
+          selectedBookIds: _selectedBookIds,
+          onDismiss: () => Navigator.of(dialogContext).pop(),
+          onDeleteBook: (book) => _confirmDeleteBooks(
+            context,
+            [book],
+            title: '删除书籍',
+            message: '确定删除《${book.title}》吗？本地导入记录和文件会一起删除。',
+          ),
+          onRemoveBookFromGroup: _removeBookFromSeriesGroup,
+          onMoveBookToGroup: (book) =>
+              _showMoveToGroupSheet(context, books: [book]),
+          onReorderGroup: (books) =>
+              _showReorderGroupSheet(context, block.title, books),
+          onEditBook: (book) {
+            closeThen(() {
+              _showEditBookDialog(context, book);
+            });
+          },
+          onOpenBook: (book) {
+            closeThen(() {
+              if (_selectionMode) {
+                HapticFeedback.selectionClick();
+                _toggleSelection(book);
+              } else {
+                _openBook(book);
+              }
+            });
+          },
+          onLongPressBook: (book) {
+            closeThen(() {
+              if (_selectionMode) {
+                HapticFeedback.selectionClick();
+                _toggleSelection(book);
+              } else {
+                _showBookMenu(context, book);
+              }
+            });
+          },
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final curved = CurvedAnimation(
+          parent: animation,
+          curve: Curves.easeOutBack,
+          reverseCurve: Curves.easeInCubic,
+        );
+        return FadeTransition(
+          opacity: animation,
+          child: ScaleTransition(
+            scale: Tween<double>(begin: .88, end: 1).animate(curved),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
+  void _handleBookBlockTap(ShelfBookBlock block) {
+    HapticFeedback.selectionClick();
+    if (_selectionMode) {
+      if (block.books.length == 1) {
+        _toggleSelection(block.books.first);
+      } else {
+        _showBookBlockPanel(context, block);
+      }
+      return;
+    }
+    if (block.books.length == 1) {
+      _openBook(block.books.first);
+      return;
+    }
+    _showBookBlockPanel(context, block);
+  }
+
+  void _handleBookBlockLongPress(ShelfBookBlock block) {
+    HapticFeedback.mediumImpact();
+    if (_selectionMode) {
+      _toggleBlockSelection(block);
+      return;
+    }
+    if (block.books.length == 1) {
+      _showBookMenu(context, block.books.first);
+      return;
+    }
+    _showBookBlockMenu(context, block);
+  }
+
+  void _toggleBlockSelection(ShelfBookBlock block) {
+    final bookIds = block.books.map((book) => book.id).toList();
+    if (bookIds.isEmpty) {
+      return;
+    }
+    setState(() {
+      final allSelected = bookIds.every(_selectedBookIds.contains);
+      if (allSelected) {
+        _selectedBookIds.removeAll(bookIds);
+        _manualSelectionHistory.removeWhere(bookIds.contains);
+      } else {
+        _selectedBookIds.addAll(bookIds);
+        _recordManualEndpoint(bookIds.first);
+        if (bookIds.length > 1) {
+          _recordManualEndpoint(bookIds.last);
+        }
+      }
+      if (_selectedBookIds.isEmpty) {
+        _manualSelectionHistory.clear();
+        _selectionUndoStack.clear();
+      }
+    });
+  }
+
+  Future<void> _showBookBlockMenu(
+    BuildContext context,
+    ShelfBookBlock block,
+  ) async {
+    final palette = widget.state.palette;
+    final action = await showShelfFloatingSheet<BookBlockMenuAction>(
+      context: context,
+      palette: palette,
+      child: ShelfActionList(
+        palette: palette,
+        title: block.title,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+            child: Text(
+              '${block.books.length} 本 · ${block.chapterCount} 章 · ${bookWordCountLabel(block.wordCount)}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: palette.muted, height: 1.45),
+            ),
+          ),
+          ShelfActionTile(
+            palette: palette,
+            icon: Icons.drive_file_rename_outline_rounded,
+            title: '修改分组名称',
+            subtitle: '给这个分组里的书统一换一个分组名',
+            onTap: () => Navigator.pop(context, BookBlockMenuAction.rename),
+          ),
+          ShelfActionTile(
+            palette: palette,
+            icon: Icons.delete_outline_rounded,
+            title: '删除整个分组',
+            subtitle: '删除这个分组里的全部书籍',
+            onTap: () => Navigator.pop(context, BookBlockMenuAction.delete),
+          ),
+          ShelfActionTile(
+            palette: palette,
+            icon: Icons.merge_type_rounded,
+            title: '合并到分组',
+            subtitle: '把这个分组并入另一个已有分组',
+            onTap: () => Navigator.pop(context, BookBlockMenuAction.merge),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || !context.mounted || action == null) {
+      return;
+    }
+    switch (action) {
+      case BookBlockMenuAction.rename:
+        await _showRenameGroupDialog(context, block);
+      case BookBlockMenuAction.delete:
+        await _confirmDeleteBooks(
+          context,
+          block.books,
+          title: '删除整个分组',
+          message:
+              '确定删除“${block.title}”里的 ${block.books.length} 本书吗？本地导入记录和文件会一起删除。',
+        );
+      case BookBlockMenuAction.merge:
+        await _showMoveToGroupSheet(context, books: block.books);
+    }
+  }
+
+  Future<void> _showRenameGroupDialog(
+    BuildContext context,
+    ShelfBookBlock block,
+  ) async {
+    final palette = widget.state.palette;
+    final controller = TextEditingController(
+      text: _canonicalSeriesTitle(block),
+    );
+    final name = await showShelfFloatingDialog<String>(
+      context: context,
+      palette: palette,
+      child: ShelfDialogPanel(
+        palette: palette,
+        title: '修改分组名称',
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('保存'),
+          ),
+        ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '会把这个分组里的 ${block.books.length} 本书移动到新的分组名下。',
+              style: TextStyle(
+                color: palette.muted,
+                fontSize: 13,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 14),
+            ShelfTextField(
+              controller: controller,
+              palette: palette,
+              label: '分组名称',
+              maxLength: 28,
+              autofocus: true,
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    final trimmed = name?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
+      return;
+    }
+    await widget.state.updateBookSeriesOverride(
+      block.books.map((book) => book.id).toSet(),
+      trimmed,
+    );
+  }
+
   void _reportSelectionModeIfNeeded() {
     final selectionMode = _selectionMode;
     if (_reportedSelectionMode == selectionMode) {
@@ -370,7 +608,7 @@ class _ShelfScreenState extends State<ShelfScreen> {
       final title = hasManualSeries ? override : _blockTitleForBook(book);
       final author = book.author.trim();
       final key = hasManualSeries
-          ? 'manual::${_seriesKeyForTitle(title)}'
+          ? 'manual::${_manualSeriesKeyForTitle(title)}'
           : '${author.toLowerCase()}::${_seriesKeyForTitle(title)}';
       groups.putIfAbsent(key, () => <BookEntry>[]).add(book);
       titles.putIfAbsent(key, () => title);
@@ -420,10 +658,10 @@ class _ShelfScreenState extends State<ShelfScreen> {
       final candidate = result[candidateIndex];
       result[candidateIndex] = ShelfBookBlock(
         key: candidate.key,
-        title: candidate.title,
+        title: _preferredSeriesTitle(candidate, block),
         author: candidate.author,
         books: _sortBlockBooks([...candidate.books, ...block.books]),
-        manual: candidate.manual,
+        manual: candidate.manual || block.manual,
       );
     }
     return result;
@@ -436,7 +674,7 @@ class _ShelfScreenState extends State<ShelfScreen> {
     final candidateKey = _seriesKeyForTitle(candidate.title);
     final blockKey = _seriesKeyForTitle(block.title);
     if (candidate.manual || block.manual) {
-      return candidateKey == blockKey;
+      return false;
     }
     final titleClose =
         candidateKey == blockKey ||
@@ -491,6 +729,14 @@ class _ShelfScreenState extends State<ShelfScreen> {
 
   List<BookEntry> _sortBlockBooks(List<BookEntry> books) {
     return [...books]..sort((a, b) {
+      final aOrder = a.seriesOrder;
+      final bOrder = b.seriesOrder;
+      if (aOrder != null && bOrder != null && aOrder != bOrder) {
+        return aOrder.compareTo(bOrder);
+      }
+      if (aOrder != null || bOrder != null) {
+        return aOrder != null ? -1 : 1;
+      }
       final aVolume = _bookVolumeNumber(a);
       final bVolume = _bookVolumeNumber(b);
       if (aVolume != null && bVolume != null) {
@@ -523,7 +769,7 @@ class _ShelfScreenState extends State<ShelfScreen> {
   }
 
   String _seriesKeyForTitle(String title) {
-    var cleaned = title.toLowerCase();
+    var cleaned = _stripSeriesSuffix(title).toLowerCase();
     const aliases = <String, String>{
       '我的妹妹不可能那么可爱': '我的妹妹哪有这么可爱',
       '我的妹妹不可能这么可爱': '我的妹妹哪有这么可爱',
@@ -531,6 +777,18 @@ class _ShelfScreenState extends State<ShelfScreen> {
       '我的妹妹哪有那麼可愛': '我的妹妹哪有这么可爱',
     };
     for (final entry in aliases.entries) {
+      cleaned = cleaned.replaceAll(entry.key, entry.value);
+    }
+    const seriesAliases = <String, String>{
+      '败犬女主': '败北女角',
+      '敗犬女主': '敗北女角',
+      '败犬女角': '败北女角',
+      '敗犬女角': '敗北女角',
+      '负けヒロインが多すぎる': '败北女角太多了',
+      '負けヒロインが多すぎる': '敗北女角太多了',
+      'makeine': '败北女角太多了',
+    };
+    for (final entry in seriesAliases.entries) {
       cleaned = cleaned.replaceAll(entry.key, entry.value);
     }
     cleaned = cleaned
@@ -550,6 +808,12 @@ class _ShelfScreenState extends State<ShelfScreen> {
           '',
         );
     return pinyinSortKey(cleaned);
+  }
+
+  String _manualSeriesKeyForTitle(String title) {
+    return pinyinSortKey(
+      title.trim().toLowerCase().replaceAll(RegExp(r'[\s\-_·・:：.]+'), ''),
+    );
   }
 
   double _seriesTitleSimilarity(String left, String right) {
@@ -615,7 +879,7 @@ class _ShelfScreenState extends State<ShelfScreen> {
   }
 
   String _blockTitleForBook(BookEntry book) {
-    var title = book.title.trim();
+    var title = _stripSeriesSuffix(book.title);
     title = title.replaceAll(
       RegExp(
         r'[\s\-_:：·.]*第?\s*[\d一二三四五六七八九十百千万零〇两]+\s*(?:卷|册|集)?\s*(?=(?:番外|外传|外傳|短篇|特典|if线|if線|if|bd|dvd|广播剧|廣播劇|携带版|攜帶版).*$)',
@@ -636,6 +900,25 @@ class _ShelfScreenState extends State<ShelfScreen> {
     );
     title = title.replaceAll(RegExp(r'\s+'), ' ').trim();
     return title.isEmpty ? book.title.trim() : title;
+  }
+
+  String _stripSeriesSuffix(String rawTitle) {
+    var title = rawTitle.trim();
+    title = title.replaceAll(
+      RegExp(
+        r'[\s\-_:：·.]+[\d一二三四五六七八九十百千万零〇两]{1,4}\s*(?:[(（][^)）]*(?:版|优化|優化|翻译|翻譯|校对|校對|epub|txt|自制|自製)[)）])?\s*$',
+        caseSensitive: false,
+      ),
+      '',
+    );
+    title = title.replaceAll(
+      RegExp(
+        r'[\s\-_:：·.]+(?:vol(?:ume)?\.?|卷|第)\s*[\d一二三四五六七八九十百千万零〇两]{1,4}\s*$',
+        caseSensitive: false,
+      ),
+      '',
+    );
+    return title.trim();
   }
 
   int? _bookVolumeNumber(BookEntry book) {
@@ -794,7 +1077,7 @@ class _ShelfScreenState extends State<ShelfScreen> {
     return _blockTitleForBook(book);
   }
 
-  Future<void> _showMoveToGroupSheet(
+  Future<bool> _showMoveToGroupSheet(
     BuildContext context, {
     List<BookEntry>? books,
   }) async {
@@ -805,11 +1088,12 @@ class _ShelfScreenState extends State<ShelfScreen> {
             .toList();
     final bookIds = targetBooks.map((book) => book.id).toSet();
     if (targetBooks.isEmpty) {
-      return;
+      return false;
     }
     HapticFeedback.selectionClick();
     final palette = widget.state.palette;
     final groups = _availableSeriesGroups(excludingIds: bookIds);
+    final currentGroup = _currentSeriesBlockTitle(bookIds);
     final result = await showShelfFloatingSheet<({bool clear, String? name})>(
       context: context,
       palette: palette,
@@ -829,9 +1113,7 @@ class _ShelfScreenState extends State<ShelfScreen> {
               palette: palette,
               icon: Icons.folder_rounded,
               title: group,
-              subtitle: group == _effectiveSeriesName(targetBooks.first)
-                  ? '当前分组'
-                  : null,
+              subtitle: group == currentGroup ? '当前分组' : null,
               onTap: () => Navigator.pop(context, (clear: false, name: group)),
             ),
           ShelfActionTile(
@@ -845,33 +1127,255 @@ class _ShelfScreenState extends State<ShelfScreen> {
       ),
     );
     if (!context.mounted || result == null) {
-      return;
+      return false;
     }
-    await widget.state.updateBookSeriesOverride(
-      bookIds,
-      result.clear ? null : result.name,
-    );
+    final targetName = result.clear ? null : _canonicalSeriesName(result.name);
+    final targetIds = result.clear
+        ? bookIds
+        : {...bookIds, ..._seriesBlockBookIds(targetName)};
+    await widget.state.updateBookSeriesOverride(targetIds, targetName);
     if (mounted && books == null) {
       setState(_clearSelection);
     }
+    return true;
+  }
+
+  Future<bool> _removeBookFromSeriesGroup(BookEntry book) async {
+    HapticFeedback.selectionClick();
+    await widget.state.updateBookSeriesOverride({book.id}, book.title.trim());
+    return true;
+  }
+
+  Future<List<BookEntry>?> _showReorderGroupSheet(
+    BuildContext context,
+    String groupTitle,
+    List<BookEntry> books,
+  ) async {
+    if (books.length < 2) {
+      return null;
+    }
+    HapticFeedback.selectionClick();
+    final palette = widget.state.palette;
+    final ordered = [...books];
+    final saved = await showShelfFloatingDialog<bool>(
+      context: context,
+      palette: palette,
+      child: StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          final height = math.min(ordered.length * 82.0, 430.0).toDouble();
+          return ShelfDialogPanel(
+            palette: palette,
+            title: '分组内排序',
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('保存'),
+              ),
+            ],
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  groupTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: palette.muted, height: 1.45),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: height,
+                  child: ReorderableListView.builder(
+                    padding: EdgeInsets.zero,
+                    physics: const ClampingScrollPhysics(),
+                    proxyDecorator: (child, index, animation) {
+                      return Material(
+                        color: Colors.transparent,
+                        child: ScaleTransition(
+                          scale: Tween<double>(begin: 1, end: 1.03).animate(
+                            CurvedAnimation(
+                              parent: animation,
+                              curve: Curves.easeOutCubic,
+                            ),
+                          ),
+                          child: child,
+                        ),
+                      );
+                    },
+                    itemCount: ordered.length,
+                    onReorderItem: (oldIndex, newIndex) {
+                      setDialogState(() {
+                        final item = ordered.removeAt(oldIndex);
+                        ordered.insert(newIndex, item);
+                      });
+                    },
+                    itemBuilder: (context, index) {
+                      final book = ordered[index];
+                      return _ReorderBookTile(
+                        key: ValueKey(book.id),
+                        book: book,
+                        index: index,
+                        palette: palette,
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+    if (saved != true) {
+      return null;
+    }
+    await widget.state.updateBookSeriesOrder(
+      ordered.map((book) => book.id).toList(),
+    );
+    return ordered;
+  }
+
+  Future<bool> _confirmDeleteBooks(
+    BuildContext context,
+    List<BookEntry> books, {
+    required String title,
+    required String message,
+  }) async {
+    if (books.isEmpty) {
+      return false;
+    }
+    HapticFeedback.selectionClick();
+    final palette = widget.state.palette;
+    final confirm = await showShelfFloatingDialog<bool>(
+      context: context,
+      palette: palette,
+      child: ShelfDialogPanel(
+        palette: palette,
+        title: title,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('删除'),
+          ),
+        ],
+        child: Text(
+          message,
+          style: TextStyle(color: palette.muted, height: 1.5),
+        ),
+      ),
+    );
+    if (confirm != true) {
+      return false;
+    }
+    for (final book in books) {
+      await widget.state.removeBook(book);
+    }
+    return true;
   }
 
   List<String> _availableSeriesGroups({Set<String> excludingIds = const {}}) {
-    final names = <String>{};
-    for (final book in widget.state.books) {
-      if (excludingIds.contains(book.id)) {
+    final namesByKey = <String, String>{};
+    for (final block in _buildBookBlocks(widget.state.books)) {
+      if (block.books.every((book) => excludingIds.contains(book.id))) {
         continue;
       }
-      final name = _effectiveSeriesName(book).trim();
+      final name = _canonicalSeriesTitle(block).trim();
       if (name.isNotEmpty) {
-        names.add(name);
+        namesByKey.putIfAbsent(_seriesKeyForTitle(name), () => name);
       }
     }
-    if (names.isEmpty) {
-      names.addAll(_targetFallbackGroups(excludingIds));
+    if (namesByKey.isEmpty) {
+      for (final name in _targetFallbackGroups(excludingIds)) {
+        namesByKey.putIfAbsent(_seriesKeyForTitle(name), () => name);
+      }
     }
-    final sorted = names.toList()..sort((a, b) => compareNaturalText(a, b));
+    final sorted = namesByKey.values.toList()
+      ..sort((a, b) => compareNaturalText(a, b));
     return sorted;
+  }
+
+  String? _currentSeriesBlockTitle(Set<String> bookIds) {
+    if (bookIds.isEmpty) {
+      return null;
+    }
+    for (final block in _buildBookBlocks(widget.state.books)) {
+      if (block.books.any((book) => bookIds.contains(book.id))) {
+        return block.title;
+      }
+    }
+    return null;
+  }
+
+  Set<String> _seriesBlockBookIds(String? groupName) {
+    final key = _seriesKeyForTitle(groupName?.trim() ?? '');
+    if (key.isEmpty) {
+      return const {};
+    }
+    final ids = <String>{};
+    for (final block in _buildBookBlocks(widget.state.books)) {
+      if (_seriesKeyForTitle(_canonicalSeriesTitle(block)) == key ||
+          _seriesKeyForTitle(block.title) == key) {
+        ids.addAll(block.books.map((book) => book.id));
+      }
+    }
+    return ids;
+  }
+
+  String _canonicalSeriesTitle(ShelfBookBlock block) {
+    if (block.manual) {
+      return block.title;
+    }
+    final candidates = <String>[
+      block.title,
+      for (final book in block.books) _blockTitleForBook(book),
+    ].map((title) => title.trim()).where((title) => title.isNotEmpty).toList();
+    if (candidates.isEmpty) {
+      return block.title;
+    }
+    candidates.sort((a, b) {
+      final byKeyLength = _seriesKeyForTitle(
+        a,
+      ).length.compareTo(_seriesKeyForTitle(b).length);
+      if (byKeyLength != 0) {
+        return byKeyLength;
+      }
+      return a.length.compareTo(b.length);
+    });
+    return candidates.first;
+  }
+
+  String? _canonicalSeriesName(String? rawName) {
+    final name = rawName?.trim();
+    if (name == null || name.isEmpty) {
+      return null;
+    }
+    for (final block in _buildBookBlocks(widget.state.books)) {
+      if (_seriesKeyForTitle(block.title) == _seriesKeyForTitle(name) ||
+          _seriesKeyForTitle(_canonicalSeriesTitle(block)) ==
+              _seriesKeyForTitle(name)) {
+        return _canonicalSeriesTitle(block);
+      }
+    }
+    return _stripSeriesSuffix(name);
+  }
+
+  String _preferredSeriesTitle(ShelfBookBlock left, ShelfBookBlock right) {
+    return _canonicalSeriesTitle(
+      ShelfBookBlock(
+        key: left.key,
+        title: left.title,
+        author: left.author,
+        books: [...left.books, ...right.books],
+      ),
+    );
   }
 
   Iterable<String> _targetFallbackGroups(Set<String> excludingIds) sync* {
@@ -1035,10 +1539,14 @@ class _ShelfScreenState extends State<ShelfScreen> {
     }
   }
 
-  Future<void> _showShelfMenu(BuildContext context) async {
+  Future<void> _showShelfMenu(
+    BuildContext context, {
+    required LayerLink anchorLink,
+  }) async {
     final palette = widget.state.palette;
-    final action = await showShelfFloatingSheet<ShelfMenuAction>(
+    final action = await showShelfFollowerMenu<ShelfMenuAction>(
       context: context,
+      anchorLink: anchorLink,
       palette: palette,
       child: ShelfActionList(
         palette: palette,
@@ -1064,6 +1572,14 @@ class _ShelfScreenState extends State<ShelfScreen> {
             subtitle: '创建一个新的分类入口',
             onTap: () => Navigator.pop(context, ShelfMenuAction.create),
           ),
+          if (_selectedShelf != defaultShelfName)
+            ShelfActionTile(
+              palette: palette,
+              icon: Icons.delete_outline_rounded,
+              title: '删除书架',
+              subtitle: '只删除当前书架，不删除其中的书籍',
+              onTap: () => Navigator.pop(context, ShelfMenuAction.delete),
+            ),
         ],
       ),
     );
@@ -1077,6 +1593,8 @@ class _ShelfScreenState extends State<ShelfScreen> {
         await _showSortSheet(context);
       case ShelfMenuAction.create:
         await _showCreateShelfDialog(context);
+      case ShelfMenuAction.delete:
+        await _showDeleteShelfDialog(context);
     }
   }
 
@@ -1144,13 +1662,60 @@ class _ShelfScreenState extends State<ShelfScreen> {
             child: const Text('创建'),
           ),
         ],
-        child: ShelfTextField(
-          controller: controller,
-          palette: palette,
-          label: '书架名',
-          hintText: '例如：校园、异世界',
-          maxLength: 12,
-          autofocus: true,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '书架名',
+              style: TextStyle(
+                color: palette.text,
+                fontSize: 16,
+                fontWeight: AppTextWeight.medium,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '用来单独收藏一组你想固定管理的书。',
+              style: TextStyle(color: palette.muted, fontSize: 13, height: 1.4),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              maxLength: 12,
+              style: TextStyle(
+                color: palette.text,
+                fontSize: 18,
+                fontWeight: AppTextWeight.medium,
+              ),
+              decoration: InputDecoration(
+                hintText: '例如：校园、异世界',
+                hintStyle: TextStyle(color: palette.subtle),
+                counterStyle: TextStyle(color: palette.muted),
+                filled: true,
+                fillColor: palette.card,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 18,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  borderSide: BorderSide(
+                    color: palette.accentText.withValues(alpha: .32),
+                    width: 1.4,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1161,6 +1726,43 @@ class _ShelfScreenState extends State<ShelfScreen> {
     await widget.state.createShelf(name);
     if (mounted) {
       setState(() => _selectedShelf = name.trim());
+    }
+  }
+
+  Future<void> _showDeleteShelfDialog(BuildContext context) async {
+    final palette = widget.state.palette;
+    final shelfName = _selectedShelf;
+    final confirm = await showShelfFloatingDialog<bool>(
+      context: context,
+      palette: palette,
+      child: ShelfDialogPanel(
+        palette: palette,
+        title: '删除书架',
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('删除'),
+          ),
+        ],
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 8.0),
+          child: Text(
+            '确定要删除书架「$shelfName」吗？\n该书架内的书籍不会被删除，它们将返回“全部”列表。',
+            style: TextStyle(color: palette.text, fontSize: 15, height: 1.6),
+          ),
+        ),
+      ),
+    );
+    if (confirm != true) {
+      return;
+    }
+    await widget.state.deleteShelf(shelfName);
+    if (mounted) {
+      setState(() => _selectedShelf = defaultShelfName);
     }
   }
 
@@ -1288,5 +1890,166 @@ class _ShelfScreenState extends State<ShelfScreen> {
         setState(_clearSelection);
       }
     }
+  }
+}
+
+class _BookBlockMasonry extends StatelessWidget {
+  const _BookBlockMasonry({
+    required this.blocks,
+    required this.palette,
+    required this.selectionMode,
+    required this.selectedBookIds,
+    required this.onTapBlock,
+    required this.onLongPressBlock,
+  });
+
+  final List<ShelfBookBlock> blocks;
+  final AppPalette palette;
+  final bool selectionMode;
+  final Set<String> selectedBookIds;
+  final ValueChanged<ShelfBookBlock> onTapBlock;
+  final ValueChanged<ShelfBookBlock> onLongPressBlock;
+
+  static const _gap = 14.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columnWidth = math.max((constraints.maxWidth - _gap) / 2, 120.0);
+        final columns = [<ShelfBookBlock>[], <ShelfBookBlock>[]];
+        final heights = [0.0, 0.0];
+
+        for (final block in blocks) {
+          final target = heights[0] <= heights[1] ? 0 : 1;
+          columns[target].add(block);
+          heights[target] += _estimateCardHeight(block, columnWidth) + _gap;
+        }
+
+        Widget buildColumn(List<ShelfBookBlock> columnBlocks) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var index = 0; index < columnBlocks.length; index++) ...[
+                BookBlockGridCard(
+                  block: columnBlocks[index],
+                  palette: palette,
+                  selectionMode: selectionMode,
+                  selectedBookIds: selectedBookIds,
+                  onTap: () => onTapBlock(columnBlocks[index]),
+                  onLongPress: () => onLongPressBlock(columnBlocks[index]),
+                ),
+                if (index != columnBlocks.length - 1)
+                  const SizedBox(height: _gap),
+              ],
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: buildColumn(columns[0])),
+            const SizedBox(width: _gap),
+            Expanded(child: buildColumn(columns[1])),
+          ],
+        );
+      },
+    );
+  }
+
+  double _estimateCardHeight(ShelfBookBlock block, double columnWidth) {
+    final contentWidth = math.max(columnWidth - 28, 80.0);
+    final visibleCount = block.books.isEmpty
+        ? 1
+        : math.min(block.books.length, 3);
+    final stackWidth = math.max(contentWidth * .88, 104.0);
+    final spread = visibleCount > 1 ? stackWidth * .07 : 0.0;
+    final coverWidth = math.max(
+      104.0,
+      stackWidth - spread * (visibleCount - 1),
+    );
+    final coverHeight = coverWidth * 1.38;
+    final textWidth = math.max(columnWidth - 28, 80.0);
+    final charsPerLine = math.max((textWidth / 15.5).floor(), 5);
+    final titleLines = (block.title.runes.length / charsPerLine).ceil().clamp(
+      1,
+      2,
+    );
+    return 14 + coverHeight + 11 + titleLines * 19 + 7 + 14 + 3 + 14 + 12 + 16;
+  }
+}
+
+class _ReorderBookTile extends StatelessWidget {
+  const _ReorderBookTile({
+    super.key,
+    required this.book,
+    required this.index,
+    required this.palette,
+  });
+
+  final BookEntry book;
+  final int index;
+  final AppPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: palette.card,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          Text(
+            '${index + 1}',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: palette.muted,
+              fontSize: 13,
+              fontWeight: AppTextWeight.medium,
+            ),
+          ),
+          const SizedBox(width: 10),
+          BookCover(
+            book: book,
+            palette: palette,
+            width: 38,
+            height: 54,
+            radius: 9,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  book.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: palette.text,
+                    fontSize: 15.2,
+                    fontWeight: AppTextWeight.semibold,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  book.author,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: palette.muted, fontSize: 12.2),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Icon(Icons.drag_handle_rounded, color: palette.muted, size: 22),
+        ],
+      ),
+    );
   }
 }

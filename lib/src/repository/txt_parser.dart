@@ -16,6 +16,7 @@ class TxtParser {
     required Directory bookDir,
     required String title,
     required String Function(List<int> bytes) decodeText,
+    required int Function(String text) estimateWordCount,
   }) async {
     final readerDir = Directory(path.join(bookDir.path, 'txt-reader'));
     if (await readerDir.exists()) {
@@ -40,6 +41,7 @@ class TxtParser {
           href: '${document.fileName}#top',
           filePath: output.path,
           anchor: 'top',
+          wordCount: estimateWordCount(document.paragraphs.join('\n')),
         ),
       );
     }

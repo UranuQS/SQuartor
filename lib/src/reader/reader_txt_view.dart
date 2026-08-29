@@ -4,12 +4,13 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_page_curl/flutter_page_curl.dart';
 
 import '../models.dart';
 import '../typography.dart';
+import 'custom_page_curl_view.dart';
 import 'reader_enums.dart';
 import 'reader_epub_fallback.dart';
-import 'reader_scroll_edge.dart';
 
 // ---------------------------------------------------------------------------
 // FlutterTxtReaderView (paged mode)
@@ -32,6 +33,10 @@ class FlutterTxtReaderView extends StatefulWidget {
     required this.onEdgeNext,
     required this.onLinkTap,
     required this.onFootnoteTap,
+    this.onVerticalDragStart,
+    this.onVerticalDragUpdate,
+    this.onVerticalDragEnd,
+    this.onVerticalDragCancel,
   });
 
   final int navigationToken;
@@ -48,6 +53,10 @@ class FlutterTxtReaderView extends StatefulWidget {
   final Future<void> Function() onEdgeNext;
   final Future<void> Function(String href) onLinkTap;
   final void Function(String text, Offset? globalPosition) onFootnoteTap;
+  final GestureDragStartCallback? onVerticalDragStart;
+  final GestureDragUpdateCallback? onVerticalDragUpdate;
+  final GestureDragEndCallback? onVerticalDragEnd;
+  final GestureDragCancelCallback? onVerticalDragCancel;
 
   @override
   State<FlutterTxtReaderView> createState() => _FlutterTxtReaderViewState();
@@ -57,6 +66,7 @@ class _FlutterTxtReaderViewState extends State<FlutterTxtReaderView> {
   static const double _edgeTurnThreshold = 56;
 
   late final PageController _pageController;
+  late final PageCurlController _turnPageController;
   double _edgeOverscroll = 0;
   var _edgeTurnInFlight = false;
 
@@ -64,6 +74,13 @@ class _FlutterTxtReaderViewState extends State<FlutterTxtReaderView> {
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: _clampedCurrentPage);
+    _turnPageController = PageCurlController(initialPage: _clampedCurrentPage);
+    _turnPageController.addListener(() {
+      widget.onPageChanged(
+        widget.navigationToken,
+        _turnPageController.currentPage,
+      );
+    });
   }
 
   @override
@@ -79,6 +96,7 @@ class _FlutterTxtReaderViewState extends State<FlutterTxtReaderView> {
   @override
   void dispose() {
     _pageController.dispose();
+    _turnPageController.dispose();
     super.dispose();
   }
 
@@ -126,28 +144,66 @@ class _FlutterTxtReaderViewState extends State<FlutterTxtReaderView> {
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTapUp: widget.onTapUp,
+      onVerticalDragStart: widget.onVerticalDragStart,
+      onVerticalDragUpdate: widget.onVerticalDragUpdate,
+      onVerticalDragEnd: widget.onVerticalDragEnd,
+      onVerticalDragCancel: widget.onVerticalDragCancel,
       child: ColoredBox(
         color: widget.readerPalette.background,
         child: NotificationListener<ScrollNotification>(
           onNotification: _handlePageScrollNotification,
-          child: PageView.builder(
-            controller: _pageController,
-            physics: const PageScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
-            ),
-            itemCount: safePages.length,
-            onPageChanged: (page) =>
-                widget.onPageChanged(widget.navigationToken, page),
-            itemBuilder: (context, index) {
-              return RepaintBoundary(
-                child: _txtPageView(
-                  blocks: safePages[index].blocks,
-                  paragraphStyle: paragraphStyle,
-                  titleStyle: titleStyle,
-                  linkStyle: linkStyle,
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: widget.style.pageTurnAnimation
+                    ? CustomPageCurlView(
+                        controller: _turnPageController,
+                        itemCount: safePages.length,
+                        backOpacity: 0.1, // Subtle darkening for mirrored text
+                        onCenterTap: widget.onTapUp,
+                        itemBuilder: (context, index) {
+                          return ColoredBox(
+                            color: widget.readerPalette.background,
+                            child: _txtPageView(
+                              blocks: safePages[index].blocks,
+                              paragraphStyle: paragraphStyle,
+                              titleStyle: titleStyle,
+                              linkStyle: linkStyle,
+                            ),
+                          );
+                        },
+                      )
+                    : PageView.builder(
+                        controller: _pageController,
+                        physics: const PageScrollPhysics(
+                          parent: AlwaysScrollableScrollPhysics(),
+                        ),
+                        itemCount: safePages.length,
+                        onPageChanged: (page) =>
+                            widget.onPageChanged(widget.navigationToken, page),
+                        itemBuilder: (context, index) {
+                          return RepaintBoundary(
+                            child: ColoredBox(
+                              color: widget.readerPalette.background,
+                              child: _txtPageView(
+                                blocks: safePages[index].blocks,
+                                paragraphStyle: paragraphStyle,
+                                titleStyle: titleStyle,
+                                linkStyle: linkStyle,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+              if (widget.style.pageTurnAnimation)
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTapUp: widget.onTapUp,
+                  ),
                 ),
-              );
-            },
+            ],
           ),
         ),
       ),
@@ -183,25 +239,34 @@ class _FlutterTxtReaderViewState extends State<FlutterTxtReaderView> {
 
   void _syncControllerToCurrentPage({required bool animated}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_pageController.hasClients) {
+      if (!mounted) {
         return;
       }
       final target = _clampedCurrentPage;
-      final current = (_pageController.page ?? _pageController.initialPage)
-          .round();
-      if (current == target) {
-        return;
-      }
-      if (animated && (current - target).abs() == 1) {
-        unawaited(
+      final current = widget.style.pageTurnAnimation
+          ? _turnPageController.currentPage
+          : (_pageController.page ?? _pageController.initialPage).round();
+      if (current == target) return;
+      if (widget.style.pageTurnAnimation) {
+        if (animated && (target - current).abs() == 1) {
+          if (current < target) {
+            _turnPageController.nextPage();
+          } else {
+            _turnPageController.previousPage();
+          }
+        } else {
+          _turnPageController.jumpToPage(target);
+        }
+      } else {
+        if (animated && (current - target).abs() == 1) {
           _pageController.animateToPage(
             target,
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOutCubic,
-          ),
-        );
-      } else {
-        _pageController.jumpToPage(target);
+          );
+        } else {
+          _pageController.jumpToPage(target);
+        }
       }
     });
   }
@@ -221,6 +286,7 @@ class _FlutterTxtReaderViewState extends State<FlutterTxtReaderView> {
       titleStyle: titleStyle,
       linkStyle: linkStyle,
       justifyText: true,
+      dimJapaneseText: true,
       onLinkTap: widget.onLinkTap,
       onFootnoteTap: widget.onFootnoteTap,
     );
@@ -246,10 +312,15 @@ class FlutterTxtScrollReaderView extends StatefulWidget {
     required this.linkColor,
     required this.onTapUp,
     required this.onProgressChanged,
+    required this.onEdgeTurnProgress,
     required this.onEdgePrevious,
     required this.onEdgeNext,
     required this.onLinkTap,
     required this.onFootnoteTap,
+    this.onVerticalDragStart,
+    this.onVerticalDragUpdate,
+    this.onVerticalDragEnd,
+    this.onVerticalDragCancel,
   });
 
   final int navigationToken;
@@ -264,10 +335,16 @@ class FlutterTxtScrollReaderView extends StatefulWidget {
   final Color linkColor;
   final GestureTapUpCallback onTapUp;
   final void Function(int token, int page, int pageCount) onProgressChanged;
+  final void Function(ScrollEdgeTurnDirection? direction, double progress)
+  onEdgeTurnProgress;
   final Future<void> Function() onEdgePrevious;
   final Future<void> Function() onEdgeNext;
   final Future<void> Function(String href) onLinkTap;
   final void Function(String text, Offset? globalPosition) onFootnoteTap;
+  final GestureDragStartCallback? onVerticalDragStart;
+  final GestureDragUpdateCallback? onVerticalDragUpdate;
+  final GestureDragEndCallback? onVerticalDragEnd;
+  final GestureDragCancelCallback? onVerticalDragCancel;
 
   @override
   State<FlutterTxtScrollReaderView> createState() =>
@@ -276,27 +353,21 @@ class FlutterTxtScrollReaderView extends StatefulWidget {
 
 class _FlutterTxtScrollReaderViewState
     extends State<FlutterTxtScrollReaderView> {
-  static const double _edgeTurnThreshold = 132;
+  static const double _edgeTurnThreshold = 176;
+  static const double _edgeTurnProgressExponent = 1.35;
 
   double _edgeOverscroll = 0;
   ScrollEdgeTurnDirection? _edgeTurnDirection;
+  double _edgeTurnProgress = 0;
   var _edgeTurnInFlight = false;
   var _initialScrollApplied = false;
   var _lastReportedPage = -1;
   var _lastReportedPageCount = -1;
-  final ValueNotifier<ScrollEdgeTurnState> _edgeTurnNotifier =
-      ValueNotifier<ScrollEdgeTurnState>(const ScrollEdgeTurnState.hidden());
 
   @override
   void initState() {
     super.initState();
     _scheduleInitialScroll();
-  }
-
-  @override
-  void dispose() {
-    _edgeTurnNotifier.dispose();
-    super.dispose();
   }
 
   @override
@@ -306,6 +377,7 @@ class _FlutterTxtScrollReaderViewState
       _initialScrollApplied = false;
       _lastReportedPage = -1;
       _lastReportedPageCount = -1;
+      _setEdgeTurnProgress(null, 0);
       _scheduleInitialScroll();
     }
   }
@@ -347,66 +419,49 @@ class _FlutterTxtScrollReaderViewState
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTapUp: widget.onTapUp,
+      onVerticalDragStart: widget.onVerticalDragStart,
+      onVerticalDragUpdate: widget.onVerticalDragUpdate,
+      onVerticalDragEnd: widget.onVerticalDragEnd,
+      onVerticalDragCancel: widget.onVerticalDragCancel,
       child: ColoredBox(
         color: widget.readerPalette.background,
-        child: Stack(
-          children: [
-            NotificationListener<ScrollNotification>(
-              onNotification: _handleScrollNotification,
-              child: ListView.builder(
-                controller: widget.controller,
-                physics: const ClampingScrollPhysics(
-                  parent: AlwaysScrollableScrollPhysics(),
-                ),
-                padding: EdgeInsets.only(
-                  left:
-                      widget.metrics.pageOuterInset +
-                      widget.metrics.padding.left,
-                  right:
-                      widget.metrics.pageOuterInset +
-                      widget.metrics.padding.right,
-                  top: widget.metrics.padding.top,
-                  bottom: widget.metrics.padding.bottom,
-                ),
-                itemCount: widget.blocks.length,
-                itemBuilder: (context, index) {
-                  final block = widget.blocks[index];
-                  return RepaintBoundary(
-                    child: Center(
-                      child: SizedBox(
-                        width: widget.metrics.contentWidth,
-                        child: FlutterTxtBlockView(
-                          block: block,
-                          paragraphStyle: paragraphStyle,
-                          titleStyle: titleStyle,
-                          linkStyle: linkStyle,
-                          firstLineIndentWidth: effectiveFontSize * 2,
-                          justifyText: false,
-                          onLinkTap: widget.onLinkTap,
-                          onFootnoteTap: widget.onFootnoteTap,
-                        ),
-                      ),
+        child: NotificationListener<ScrollNotification>(
+          onNotification: _handleScrollNotification,
+          child: ListView.builder(
+            controller: widget.controller,
+            physics: const ClampingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
+            padding: EdgeInsets.only(
+              left: widget.metrics.pageOuterInset + widget.metrics.padding.left,
+              right:
+                  widget.metrics.pageOuterInset + widget.metrics.padding.right,
+              top: widget.metrics.padding.top,
+              bottom: widget.metrics.padding.bottom,
+            ),
+            itemCount: widget.blocks.length,
+            itemBuilder: (context, index) {
+              final block = widget.blocks[index];
+              return RepaintBoundary(
+                child: Center(
+                  child: SizedBox(
+                    width: widget.metrics.contentWidth,
+                    child: FlutterTxtBlockView(
+                      block: block,
+                      paragraphStyle: paragraphStyle,
+                      titleStyle: titleStyle,
+                      linkStyle: linkStyle,
+                      firstLineIndentWidth: effectiveFontSize * 2,
+                      justifyText: false,
+                      dimJapaneseText: true,
+                      onLinkTap: widget.onLinkTap,
+                      onFootnoteTap: widget.onFootnoteTap,
                     ),
-                  );
-                },
-              ),
-            ),
-            ValueListenableBuilder<ScrollEdgeTurnState>(
-              valueListenable: _edgeTurnNotifier,
-              builder: (context, state, _) {
-                if (state.progress <= 0 || state.direction == null) {
-                  return const SizedBox.shrink();
-                }
-                return ScrollEdgeTurnHintPositioned(
-                  direction: state.direction!,
-                  progress: state.progress,
-                  readerPalette: widget.readerPalette,
-                  palette: widget.appPalette,
-                  systemPadding: MediaQuery.viewPaddingOf(context),
-                );
-              },
-            ),
-          ],
+                  ),
+                ),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -467,11 +522,17 @@ class _FlutterTxtScrollReaderViewState
       _setEdgeTurnProgress(null, 0);
       return;
     }
+    final rawProgress = (magnitude / _edgeTurnThreshold)
+        .clamp(0.0, 1.0)
+        .toDouble();
+    final dampedProgress = math
+        .pow(rawProgress, _edgeTurnProgressExponent)
+        .toDouble();
     _setEdgeTurnProgress(
       overscroll > 0
           ? ScrollEdgeTurnDirection.next
           : ScrollEdgeTurnDirection.previous,
-      magnitude / _edgeTurnThreshold,
+      dampedProgress,
     );
   }
 
@@ -481,14 +542,12 @@ class _FlutterTxtScrollReaderViewState
   ) {
     final clamped = progress.clamp(0.0, 1.0).toDouble();
     if (_edgeTurnDirection == direction &&
-        (_edgeTurnNotifier.value.progress - clamped).abs() < .015) {
+        (_edgeTurnProgress - clamped).abs() < .015) {
       return;
     }
     _edgeTurnDirection = direction;
-    _edgeTurnNotifier.value = ScrollEdgeTurnState(
-      direction: direction,
-      progress: clamped,
-    );
+    _edgeTurnProgress = clamped;
+    widget.onEdgeTurnProgress(direction, clamped);
   }
 
   void _scheduleInitialScroll() {
@@ -556,6 +615,7 @@ class FlutterTxtPageView extends StatelessWidget {
     required this.titleStyle,
     required this.linkStyle,
     this.justifyText = true,
+    required this.dimJapaneseText,
     required this.onLinkTap,
     required this.onFootnoteTap,
   });
@@ -568,6 +628,7 @@ class FlutterTxtPageView extends StatelessWidget {
   final TextStyle titleStyle;
   final TextStyle linkStyle;
   final bool justifyText;
+  final bool dimJapaneseText;
   final Future<void> Function(String href) onLinkTap;
   final void Function(String text, Offset? globalPosition) onFootnoteTap;
 
@@ -595,6 +656,7 @@ class FlutterTxtPageView extends StatelessWidget {
                       linkStyle: linkStyle,
                       firstLineIndentWidth: firstLineIndentWidth,
                       justifyText: justifyText,
+                      dimJapaneseText: dimJapaneseText,
                       onLinkTap: onLinkTap,
                       onFootnoteTap: onFootnoteTap,
                     ),
@@ -627,6 +689,7 @@ class FlutterTxtBlockView extends StatelessWidget {
     required this.justifyText,
     required this.onLinkTap,
     required this.onFootnoteTap,
+    required this.dimJapaneseText,
   });
 
   final FlutterTxtBlock block;
@@ -637,6 +700,7 @@ class FlutterTxtBlockView extends StatelessWidget {
   final bool justifyText;
   final Future<void> Function(String href) onLinkTap;
   final void Function(String text, Offset? globalPosition) onFootnoteTap;
+  final bool dimJapaneseText;
 
   @override
   Widget build(BuildContext context) {
@@ -683,6 +747,7 @@ class FlutterTxtBlockView extends StatelessWidget {
                 firstLineIndentWidth,
                 onLinkTap,
                 onFootnoteTap,
+                dimJapaneseText,
               ),
             ),
     );
@@ -712,6 +777,7 @@ class FlutterTxtBlockView extends StatelessWidget {
     double firstLineIndentWidth,
     Future<void> Function(String href) onLinkTap,
     void Function(String text, Offset? globalPosition) onFootnoteTap,
+    bool dimJapaneseText,
   ) {
     if (block.kind == FlutterTxtBlockKind.title) {
       return TextSpan(text: block.text, style: titleStyle);
@@ -722,6 +788,7 @@ class FlutterTxtBlockView extends StatelessWidget {
       linkStyle,
       onLinkTap,
       onFootnoteTap,
+      dimJapaneseText,
     );
     if (!block.firstLineIndent) {
       return TextSpan(style: paragraphStyle, children: spans);
@@ -745,10 +812,12 @@ class FlutterTxtBlockView extends StatelessWidget {
     TextStyle linkStyle,
     Future<void> Function(String href) onLinkTap,
     void Function(String text, Offset? globalPosition) onFootnoteTap,
+    bool dimJapaneseText,
   ) {
     final segments = block.segments;
+    final dimBlock = dimJapaneseText && _shouldDimJapaneseParagraph(block.text);
     if (segments == null || segments.isEmpty) {
-      return [TextSpan(text: block.text)];
+      return [_japaneseAwareSpan(block.text, paragraphStyle, dimBlock)];
     }
     return [
       for (final segment in segments)
@@ -778,8 +847,106 @@ class FlutterTxtBlockView extends StatelessWidget {
             ),
           )
         else
-          TextSpan(text: segment.text),
+          _japaneseAwareSpan(segment.text, paragraphStyle, dimBlock),
     ];
+  }
+
+  TextSpan _japaneseAwareSpan(String text, TextStyle baseStyle, bool dim) {
+    if (!dim || text.isEmpty) {
+      return TextSpan(text: text);
+    }
+    final dimStyle = baseStyle.copyWith(
+      color: (baseStyle.color ?? Colors.black).withValues(alpha: .30),
+    );
+    return TextSpan(text: text, style: dimStyle);
+  }
+
+  bool _shouldDimJapaneseParagraph(String text) {
+    var kana = 0;
+    var cjk = 0;
+    var visible = 0;
+    var japanesePunctuation = 0;
+    for (final rune in text.runes) {
+      final char = String.fromCharCode(rune);
+      if (char.trim().isEmpty) {
+        continue;
+      }
+      visible++;
+      if (_isKana(rune)) {
+        kana++;
+      } else if (_isCjkIdeograph(rune)) {
+        cjk++;
+      } else if (_isJapanesePunctuation(rune)) {
+        japanesePunctuation++;
+      }
+    }
+    if (visible == 0) {
+      return false;
+    }
+    final kanaRatio = kana / visible;
+    final cjkRatio = cjk / visible;
+    if (kana < 6 || kanaRatio < .24) {
+      return false;
+    }
+    final grammarScore =
+        _japaneseGrammarScore(text) + (japanesePunctuation >= 2 ? 1 : 0);
+    if (grammarScore >= 2 && kanaRatio >= .28) {
+      return true;
+    }
+    return grammarScore >= 1 &&
+        kana >= 12 &&
+        kanaRatio >= .42 &&
+        cjkRatio < .22;
+  }
+
+  bool _isKana(int rune) {
+    return (rune >= 0x3040 && rune <= 0x309F) ||
+        (rune >= 0x30A0 && rune <= 0x30FF) ||
+        (rune >= 0x31F0 && rune <= 0x31FF) ||
+        (rune >= 0xFF66 && rune <= 0xFF9D);
+  }
+
+  bool _isCjkIdeograph(int rune) {
+    return (rune >= 0x3400 && rune <= 0x4DBF) ||
+        (rune >= 0x4E00 && rune <= 0x9FFF) ||
+        (rune >= 0xF900 && rune <= 0xFAFF);
+  }
+
+  bool _isJapanesePunctuation(int rune) {
+    return rune == 0x3001 ||
+        rune == 0x3002 ||
+        rune == 0x30FB ||
+        rune == 0x300C ||
+        rune == 0x300D ||
+        rune == 0x300E ||
+        rune == 0x300F;
+  }
+
+  int _japaneseGrammarScore(String text) {
+    var score = 0;
+    final patterns = <RegExp>[
+      RegExp(
+        r'[\u3041-\u309F\u30A0-\u30FF\u3400-\u9FFF]'
+        r'(\u3067\u3059|\u307E\u3059|\u3067\u3057\u305F|\u307E\u305B\u3093|\u3060|\u3060\u3063\u305F|\u3058\u3083\u306A\u3044|\u3067\u3057\u3087\u3046|\u304F\u3060\u3055\u3044)',
+      ),
+      RegExp(
+        r'[\u3041-\u309F\u30A0-\u30FF\u3400-\u9FFF]'
+        r'(\u3057\u305F|\u3057\u3066|\u3059\u308B|\u3055\u308C|\u308C\u308B|\u3089\u308C\u308B|\u306A\u3044|\u306A\u304B\u3063\u305F|\u304B\u3063\u305F|\u305F\u3044|\u305D\u3046|\u3088\u3046)',
+      ),
+      RegExp(
+        r'[\u3041-\u309F\u30A0-\u30FF\u3400-\u9FFF]'
+        r'(\u304B\u3089|\u307E\u3067|\u3088\u308A|\u306E\u3067|\u3051\u3069|\u306A\u3089|\u306E\u306B|\u3066\u3082|\u3067\u306F|\u306B\u306F)',
+      ),
+      RegExp(
+        r'(\u3053\u308C|\u305D\u308C|\u3042\u308C|\u3053\u306E|\u305D\u306E|\u3042\u306E|\u3053\u3053|\u305D\u3053|\u305D\u3057\u3066|\u3067\u3082|\u3060\u304B\u3089|\u3057\u304B\u3057)',
+      ),
+    ];
+    for (final pattern in patterns) {
+      if (pattern.hasMatch(text)) {
+        score++;
+      }
+    }
+    return score;
   }
 }
 
@@ -819,6 +986,7 @@ class FootnoteInlineChip extends StatelessWidget {
             fontSize: 11,
             height: 1.05,
             fontWeight: AppTextWeight.semibold,
+            decoration: TextDecoration.none,
           ),
         ),
       ),
@@ -1254,53 +1422,101 @@ List<InlineTextSegment> mergeInlineSegments(List<InlineTextSegment> segments) {
 // FlutterReaderImage
 // ---------------------------------------------------------------------------
 
-class FlutterReaderImage extends StatelessWidget {
+class FlutterReaderImage extends StatefulWidget {
   const FlutterReaderImage({super.key, required this.source});
 
   final String source;
 
   @override
-  Widget build(BuildContext context) {
+  State<FlutterReaderImage> createState() => _FlutterReaderImageState();
+}
+
+class _FlutterReaderImageState extends State<FlutterReaderImage> {
+  ImageProvider? _provider;
+  String? _providerSource;
+  var _broken = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveProvider();
+  }
+
+  @override
+  void didUpdateWidget(covariant FlutterReaderImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.source != widget.source) {
+      _provider = null;
+      _providerSource = null;
+      _broken = false;
+      _resolveProvider();
+    }
+  }
+
+  void _resolveProvider() {
+    final source = widget.source;
+    if (source.isEmpty) {
+      _broken = true;
+      return;
+    }
+    if (_providerSource == source) {
+      return;
+    }
     final uri = Uri.tryParse(source);
-    final image = _imageForSource(uri);
+    try {
+      if (uri?.scheme == 'file') {
+        _provider = FileImage(File(uri!.toFilePath()));
+      } else if (uri?.scheme == 'data') {
+        final comma = source.indexOf(',');
+        if (comma <= 0 || !source.substring(0, comma).contains(';base64')) {
+          _broken = true;
+          return;
+        }
+        _provider = MemoryImage(base64Decode(source.substring(comma + 1)));
+      } else {
+        _provider = NetworkImage(source);
+      }
+      _providerSource = source;
+      _broken = false;
+    } catch (_) {
+      _provider = null;
+      _providerSource = null;
+      _broken = true;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onLongPress: () {
-        Navigator.of(context).push<void>(
-          PageRouteBuilder<void>(
-            opaque: true,
-            transitionDuration: Duration.zero,
-            reverseTransitionDuration: Duration.zero,
-            pageBuilder: (context, animation, secondaryAnimation) =>
-                FullscreenImageViewer(source: source),
-          ),
-        );
+        Navigator.of(context).push<void>(readerImageViewerRoute(widget.source));
       },
-      child: Center(child: image),
-    );
-  }
-
-  Widget _imageForSource(Uri? uri) {
-    if (source.isEmpty) {
-      return const Icon(Icons.broken_image_rounded);
-    }
-    if (uri?.scheme == 'file') {
-      return Image.file(File(uri!.toFilePath()), fit: BoxFit.contain);
-    }
-    if (uri?.scheme == 'data') {
-      final comma = source.indexOf(',');
-      if (comma > 0 && source.substring(0, comma).contains(';base64')) {
-        try {
-          return Image.memory(
-            base64Decode(source.substring(comma + 1)),
-            fit: BoxFit.contain,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final provider = _provider;
+          if (_broken || provider == null) {
+            return const Center(child: Icon(Icons.broken_image_rounded));
+          }
+          final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+          final cacheWidth = constraints.hasBoundedWidth
+              ? (constraints.maxWidth * devicePixelRatio).round()
+              : null;
+          return Center(
+            child: Image(
+              image: ResizeImage.resizeIfNeeded(cacheWidth, null, provider),
+              width: constraints.hasBoundedWidth ? constraints.maxWidth : null,
+              height: constraints.hasBoundedHeight
+                  ? constraints.maxHeight
+                  : null,
+              fit: BoxFit.contain,
+              gaplessPlayback: true,
+              filterQuality: FilterQuality.medium,
+              errorBuilder: (_, _, _) => const Icon(Icons.broken_image_rounded),
+            ),
           );
-        } catch (_) {
-          // Fall through to a small placeholder below.
-        }
-      }
-      return const Icon(Icons.broken_image_rounded);
-    }
-    return Image.network(source, fit: BoxFit.contain);
+        },
+      ),
+    );
   }
 }

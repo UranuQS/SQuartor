@@ -250,6 +250,21 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                               ReaderInlineSwitch(
                                 palette: palette,
                                 glass: glass,
+                                title: '3D \u4eff\u771f\u7ffb\u9875',
+                                subtitle:
+                                    '\u5f00\u542f\u540e\u4f7f\u7528 3D \u7ffb\u9875\u52a8\u753b\u6548\u679c',
+                                value: style.pageTurnAnimation,
+                                onChanged: (value) {
+                                  _preview(
+                                    style.copyWith(pageTurnAnimation: value),
+                                  );
+                                  _commit();
+                                },
+                              ),
+                              const ReaderCardDivider(),
+                              ReaderInlineSwitch(
+                                palette: palette,
+                                glass: glass,
                                 title: '\u9996\u884c\u7f29\u8fdb',
                                 subtitle:
                                     '\u6b63\u6587\u6bb5\u843d\u5f00\u5934\u7f29\u8fdb\u4e24\u4e2a\u6c49\u5b57',
@@ -336,29 +351,57 @@ class ReaderSettingsHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(color: glass.panel),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 18, 12, 14),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '\u8c03\u6574\u9605\u8bfb\u7248\u5f0f\u4e0e\u80cc\u666f',
-                    style: TextStyle(
-                      color: glass.text,
-                      fontSize: 24,
-                      fontWeight: AppTextWeight.semibold,
-                    ),
-                  ),
-                ],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+      child: SizedBox(
+        width: double.infinity,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: glass.pill.withValues(alpha: glass.dark ? .46 : .54),
+            borderRadius: BorderRadius.circular(30),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.white.withValues(alpha: glass.dark ? .035 : .18),
+                blurRadius: 18,
+                offset: const Offset(0, -6),
               ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: glass.dark ? .12 : .06),
+                blurRadius: 24,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(22, 22, 22, 21),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '版式与背景',
+                  style: TextStyle(
+                    color: glass.text,
+                    fontSize: 24,
+                    height: 1.12,
+                    fontWeight: AppTextWeight.semibold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '调整阅读方式、字号、间距和纸张',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: glass.muted,
+                    fontSize: 14,
+                    height: 1.25,
+                    fontWeight: AppTextWeight.medium,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -413,7 +456,7 @@ class ReaderSettingsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: glass.pill,
+        color: glass.pill.withValues(alpha: glass.dark ? .44 : .36),
         borderRadius: BorderRadius.circular(22),
       ),
       child: Padding(
@@ -542,44 +585,48 @@ class ReaderFlowSelector extends StatelessWidget {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final segment = constraints.maxWidth / 2;
-              return DecoratedBox(
-                decoration: BoxDecoration(
-                  color: glass.pill.withValues(alpha: glass.dark ? .78 : .64),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Stack(
-                  children: [
-                    AnimatedPositioned(
-                      duration: const Duration(milliseconds: 320),
-                      curve: Curves.easeOutBack,
-                      left: isScroll ? segment + 4 : 4,
-                      top: 4,
-                      bottom: 4,
-                      width: segment - 8,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: selectedPillColor,
-                          borderRadius: BorderRadius.circular(999),
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: glass.pill.withValues(alpha: glass.dark ? .38 : .30),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Stack(
+                    clipBehavior: Clip.hardEdge,
+                    children: [
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 240),
+                        curve: Curves.easeOutCubic,
+                        left: isScroll ? segment + 4 : 4,
+                        top: 4,
+                        bottom: 4,
+                        width: segment - 8,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: selectedPillColor,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
                         ),
                       ),
-                    ),
-                    Row(
-                      children: [
-                        ReaderFlowSegment(
-                          label: '\u5de6\u53f3\u7ffb\u9875',
-                          selected: !isScroll,
-                          glass: glass,
-                          onTap: () => onChanged(ReadingFlowMode.paged),
-                        ),
-                        ReaderFlowSegment(
-                          label: '\u4e0a\u4e0b\u6eda\u52a8',
-                          selected: isScroll,
-                          glass: glass,
-                          onTap: () => onChanged(ReadingFlowMode.scroll),
-                        ),
-                      ],
-                    ),
-                  ],
+                      Row(
+                        children: [
+                          ReaderFlowSegment(
+                            label: '\u5de6\u53f3\u7ffb\u9875',
+                            selected: !isScroll,
+                            glass: glass,
+                            onTap: () => onChanged(ReadingFlowMode.paged),
+                          ),
+                          ReaderFlowSegment(
+                            label: '\u4e0a\u4e0b\u6eda\u52a8',
+                            selected: isScroll,
+                            glass: glass,
+                            onTap: () => onChanged(ReadingFlowMode.scroll),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               );
             },
@@ -623,39 +670,43 @@ class ReaderBackgroundSelector extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final segment = constraints.maxWidth / items.length;
-          return DecoratedBox(
-            decoration: BoxDecoration(
-              color: glass.pill.withValues(alpha: glass.dark ? .78 : .64),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Stack(
-              children: [
-                AnimatedPositioned(
-                  duration: const Duration(milliseconds: 320),
-                  curve: Curves.easeOutBack,
-                  left: selectedIndex * segment + 4,
-                  top: 4,
-                  bottom: 4,
-                  width: segment - 8,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: selectedPillColor,
-                      borderRadius: BorderRadius.circular(999),
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: glass.pill.withValues(alpha: glass.dark ? .38 : .30),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Stack(
+                clipBehavior: Clip.hardEdge,
+                children: [
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 240),
+                    curve: Curves.easeOutCubic,
+                    left: selectedIndex * segment + 4,
+                    top: 4,
+                    bottom: 4,
+                    width: segment - 8,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: selectedPillColor,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
                     ),
                   ),
-                ),
-                Row(
-                  children: [
-                    for (final item in items)
-                      ReaderBackgroundSegment(
-                        label: item.label,
-                        selected: item.id == items[selectedIndex].id,
-                        glass: glass,
-                        onTap: () => onChanged(item.id),
-                      ),
-                  ],
-                ),
-              ],
+                  Row(
+                    children: [
+                      for (final item in items)
+                        ReaderBackgroundSegment(
+                          label: item.label,
+                          selected: item.id == items[selectedIndex].id,
+                          glass: glass,
+                          onTap: () => onChanged(item.id),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           );
         },

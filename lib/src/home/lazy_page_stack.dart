@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
 
 class LazyPageStack extends StatefulWidget {
-  const LazyPageStack({super.key, required this.index, required this.pages});
+  const LazyPageStack({
+    super.key,
+    required this.index,
+    required this.pages,
+    required this.backgroundColor,
+  });
 
   final int index;
   final List<Widget?> pages;
+  final Color backgroundColor;
 
   @override
   State<LazyPageStack> createState() => _LazyPageStackState();
@@ -37,7 +43,9 @@ class _LazyPageStackState extends State<LazyPageStack>
   void didUpdateWidget(LazyPageStack oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.index != widget.index) {
-      _fromIndex = oldWidget.index;
+      final previousVisibleIndex = oldWidget.index;
+      _controller.stop();
+      _fromIndex = previousVisibleIndex;
       _direction = widget.index > oldWidget.index ? 1 : -1;
       _controller.forward(from: 0);
     }
@@ -75,7 +83,7 @@ class _LazyPageStackState extends State<LazyPageStack>
             child: RepaintBoundary(
               child: AnimatedBuilder(
                 animation: _controller,
-                child: page,
+                child: ColoredBox(color: widget.backgroundColor, child: page),
                 builder: (context, child) {
                   final t = Curves.easeOutCubic.transform(_controller.value);
                   var opacity = 1.0;

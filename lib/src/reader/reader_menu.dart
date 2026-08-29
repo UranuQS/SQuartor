@@ -349,15 +349,20 @@ class AdaptiveBottomMenu extends StatefulWidget {
     required this.currentChapter,
     required this.chapterCount,
     required this.overlay,
+    required this.tocShowsBookmarks,
+    required this.tocBookmarkModePosition,
     required this.tocProgress,
     required this.settingsProgress,
     required this.sideOverlayDismissing,
     required this.readerPalette,
     required this.appPalette,
     required this.onToc,
+    required this.onTocModeDragUpdate,
+    required this.onTocModeDragEnd,
+    required this.onTocModeDragCancel,
     required this.onPreviousChapter,
     required this.onNextChapter,
-    required this.onProgressSeek,
+    required this.onProgressChapterSeek,
     required this.onProgressScrubStart,
     required this.onSettings,
     required this.onProgressPressed,
@@ -369,15 +374,20 @@ class AdaptiveBottomMenu extends StatefulWidget {
   final int currentChapter;
   final int chapterCount;
   final ReaderOverlay overlay;
+  final bool tocShowsBookmarks;
+  final double tocBookmarkModePosition;
   final Animation<double> tocProgress;
   final Animation<double> settingsProgress;
   final bool sideOverlayDismissing;
   final ReaderPalette readerPalette;
   final AppPalette appPalette;
   final VoidCallback onToc;
+  final ValueChanged<double> onTocModeDragUpdate;
+  final ValueChanged<DragEndDetails> onTocModeDragEnd;
+  final VoidCallback onTocModeDragCancel;
   final VoidCallback onPreviousChapter;
   final VoidCallback onNextChapter;
-  final ValueChanged<double> onProgressSeek;
+  final ValueChanged<int> onProgressChapterSeek;
   final VoidCallback onProgressScrubStart;
   final VoidCallback onSettings;
   final VoidCallback onProgressPressed;
@@ -386,16 +396,68 @@ class AdaptiveBottomMenu extends StatefulWidget {
   State<AdaptiveBottomMenu> createState() => _AdaptiveBottomMenuState();
 }
 
-class _AdaptiveBottomMenuState extends State<AdaptiveBottomMenu> {
+class _AdaptiveBottomMenuState extends State<AdaptiveBottomMenu>
+    with SingleTickerProviderStateMixin {
   var _progressExpanded = false;
+  late final AnimationController _tocModeFade;
+  var _tocModeLayerVisible = false;
+  var _tocModeLayerPosition = 0.0;
+
+  bool _isTocModeInteracting(AdaptiveBottomMenu widget) {
+    if (widget.overlay != ReaderOverlay.toc) {
+      return false;
+    }
+    final base = widget.tocShowsBookmarks ? 1.0 : 0.0;
+    return (widget.tocBookmarkModePosition - base).abs() > .001;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _tocModeFade =
+        AnimationController(
+            vsync: this,
+            duration: const Duration(milliseconds: 150),
+            value: 0,
+          )
+          ..addListener(() {
+            if (mounted) {
+              setState(() {});
+            }
+          })
+          ..addStatusListener((status) {
+            if (status == AnimationStatus.dismissed && mounted) {
+              setState(() => _tocModeLayerVisible = false);
+            }
+          });
+  }
 
   @override
   void didUpdateWidget(covariant AdaptiveBottomMenu oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final isInteracting = _isTocModeInteracting(widget);
+    final wasInteracting = _isTocModeInteracting(oldWidget);
+    if (isInteracting) {
+      _tocModeLayerVisible = true;
+      _tocModeLayerPosition = widget.tocBookmarkModePosition;
+      _tocModeFade.value = 1;
+    } else if (wasInteracting) {
+      _tocModeLayerVisible = true;
+      _tocModeLayerPosition = widget.tocShowsBookmarks ? 1.0 : 0.0;
+      _tocModeFade.reverse(from: 1);
+    } else if (!_tocModeFade.isAnimating) {
+      _tocModeLayerPosition = widget.tocShowsBookmarks ? 1.0 : 0.0;
+    }
     if (widget.overlay != ReaderOverlay.chrome ||
         widget.sideOverlayDismissing) {
       _progressExpanded = false;
     }
+  }
+
+  @override
+  void dispose() {
+    _tocModeFade.dispose();
+    super.dispose();
   }
 
   @override
@@ -406,7 +468,12 @@ class _AdaptiveBottomMenuState extends State<AdaptiveBottomMenu> {
         .clamp(0.0, 1.0)
         .toDouble();
     final sideAmount = (tocRaw + settingsRaw).clamp(0.0, 1.0).toDouble();
-    final sideEase = Curves.easeOutCubic.transform(sideAmount);
+    final sideReversing =
+        widget.tocProgress.status == AnimationStatus.reverse ||
+        widget.settingsProgress.status == AnimationStatus.reverse ||
+        widget.sideOverlayDismissing;
+    final sideEase = (sideReversing ? Curves.easeInCubic : Curves.easeOutCubic)
+        .transform(sideAmount);
     const buttonHeight = 58.0;
     final sideActive = sideEase > 0.001;
     final chapterOpacity =
@@ -475,86 +542,44 @@ class _AdaptiveBottomMenuState extends State<AdaptiveBottomMenu> {
                   final tocLeft = innerInset;
                   final chromeSettingsLeft =
                       maxWidth - innerInset - collapsedSideWidth;
-                  late final double tocWidth;
-                  late final double settingsWidth;
-                  late final double settingsLeft;
-                  late final double progressLeft;
-                  late final double progressWidth;
-                  if (switchingSidePanels) {
-                    final tocSideTarget =
-                        tocShare * expandedSideWidth +
-                        easedSettingsShare * compactSideWidth;
-                    final settingsSideTarget =
-                        easedSettingsShare * expandedSideWidth +
-                        tocShare * compactSideWidth;
-                    tocWidth = lerpDouble(
-                      collapsedSideWidth,
-                      tocSideTarget,
-                      sideEase,
-                    )!;
-                    settingsWidth = lerpDouble(
-                      collapsedSideWidth,
-                      settingsSideTarget,
-                      sideEase,
-                    )!;
-                    settingsLeft = maxWidth - innerInset - settingsWidth;
-                    final sideProgressLeft = tocLeft + tocWidth + gap;
-                    final sideProgressWidth = math.max(
-                      progressMinWidth,
-                      settingsLeft - gap - sideProgressLeft,
-                    );
-                    progressLeft = lerpDouble(
-                      chromeProgressLeft,
-                      sideProgressLeft,
-                      sideEase,
-                    )!;
-                    progressWidth = lerpDouble(
-                      chromeProgressWidth,
-                      sideProgressWidth,
-                      sideEase,
-                    )!;
-                  } else {
-                    final tocActive = tocRaw > 0.0;
-                    final settingsActive = settingsRaw > 0.0;
-                    final tocTargetWidth = tocActive
-                        ? expandedSideWidth
-                        : compactSideWidth;
-                    final settingsTargetWidth = settingsActive
-                        ? expandedSideWidth
-                        : compactSideWidth;
-                    final targetSettingsLeft =
-                        maxWidth - innerInset - settingsTargetWidth;
-                    final targetProgressLeft = tocLeft + tocTargetWidth + gap;
-                    final targetProgressWidth = math.max(
-                      progressMinWidth,
-                      targetSettingsLeft - gap - targetProgressLeft,
-                    );
-                    tocWidth = lerpDouble(
-                      collapsedSideWidth,
-                      tocTargetWidth,
-                      sideEase,
-                    )!;
-                    settingsWidth = lerpDouble(
-                      collapsedSideWidth,
-                      settingsTargetWidth,
-                      sideEase,
-                    )!;
-                    settingsLeft = lerpDouble(
-                      chromeSettingsLeft,
-                      targetSettingsLeft,
-                      sideEase,
-                    )!;
-                    progressLeft = lerpDouble(
-                      chromeProgressLeft,
-                      targetProgressLeft,
-                      sideEase,
-                    )!;
-                    progressWidth = lerpDouble(
-                      chromeProgressWidth,
-                      targetProgressWidth,
-                      sideEase,
-                    )!;
-                  }
+                  final tocTargetWidth =
+                      tocShare * expandedSideWidth +
+                      easedSettingsShare * compactSideWidth;
+                  final settingsTargetWidth =
+                      easedSettingsShare * expandedSideWidth +
+                      tocShare * compactSideWidth;
+                  final targetSettingsLeft =
+                      maxWidth - innerInset - settingsTargetWidth;
+                  final targetProgressLeft = tocLeft + tocTargetWidth + gap;
+                  final targetProgressWidth = math.max(
+                    progressMinWidth,
+                    targetSettingsLeft - gap - targetProgressLeft,
+                  );
+                  final tocWidth = lerpDouble(
+                    collapsedSideWidth,
+                    tocTargetWidth,
+                    sideEase,
+                  )!;
+                  final settingsWidth = lerpDouble(
+                    collapsedSideWidth,
+                    settingsTargetWidth,
+                    sideEase,
+                  )!;
+                  final settingsLeft = lerpDouble(
+                    chromeSettingsLeft,
+                    targetSettingsLeft,
+                    sideEase,
+                  )!;
+                  final progressLeft = lerpDouble(
+                    chromeProgressLeft,
+                    targetProgressLeft,
+                    sideEase,
+                  )!;
+                  final progressWidth = lerpDouble(
+                    chromeProgressWidth,
+                    targetProgressWidth,
+                    sideEase,
+                  )!;
                   const sideOpacity = 1.0;
                   const actionIconSize = 26.0;
                   const actionLabelGap = 10.0;
@@ -607,6 +632,64 @@ class _AdaptiveBottomMenuState extends State<AdaptiveBottomMenu> {
                     expandedT: settingsExpandedT,
                     activeAlone: settingsRaw > 0.0 && tocRaw <= 0.0,
                   );
+                  final tocModeInteracting = _isTocModeInteracting(widget);
+                  final tocModeLayerActive =
+                      tocModeInteracting || _tocModeLayerVisible;
+                  final tocModePosition =
+                      (tocModeInteracting
+                              ? widget.tocBookmarkModePosition
+                              : _tocModeLayerPosition)
+                          .clamp(-0.18, 1.18)
+                          .toDouble();
+                  final tocModeEnabled =
+                      widget.overlay == ReaderOverlay.toc &&
+                      tocExpandedT > 0.75;
+                  final tocModeTravel = math.max(buttonHeight, tocWidth * .56);
+                  Widget buildTocModeContent({
+                    required int index,
+                    required IconData icon,
+                    required String label,
+                  }) {
+                    final distance = (index - tocModePosition).abs();
+                    final opacity = (1 - distance).clamp(0.0, 1.0).toDouble();
+                    if (opacity <= 0.001) {
+                      return const SizedBox.shrink();
+                    }
+                    final offsetX = (index - tocModePosition) * tocModeTravel;
+                    final pillWidth = math.max(1.0, tocWidth - 14);
+                    final pillIconLeft = math.max(
+                      0.0,
+                      (pillWidth - actionGroupWidth) / 2,
+                    );
+                    return Transform.translate(
+                      offset: Offset(offsetX, 0),
+                      child: Opacity(
+                        opacity: opacity,
+                        child: Align(
+                          alignment: Alignment.center,
+                          child: Container(
+                            width: pillWidth,
+                            height: buttonHeight - 10,
+                            decoration: BoxDecoration(
+                              color: glass.text.withValues(
+                                alpha: glass.dark ? .14 : .12,
+                              ),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: ReaderDockActionContent(
+                              icon: icon,
+                              label: label,
+                              glass: glass,
+                              labelProgress: tocExpandedT,
+                              iconLeft: pillIconLeft,
+                              labelWidth: actionLabelWidth,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+
                   return Stack(
                     children: [
                       Positioned(
@@ -614,20 +697,31 @@ class _AdaptiveBottomMenuState extends State<AdaptiveBottomMenu> {
                         top: 0,
                         width: tocWidth,
                         height: buttonHeight,
-                        child: IgnorePointer(
-                          ignoring: false,
-                          child: Opacity(
-                            opacity: sideOpacity,
-                            child: ReaderDockActionPill(
-                              icon: Icons.menu_book_rounded,
-                              label: '\u76ee\u5f55',
-                              glass: glass,
-                              selected: widget.overlay == ReaderOverlay.toc,
-                              labelProgress: sideEase,
-                              compact: sideActive && tocShare < settingsShare,
-                              transparent: false,
-                              showContent: false,
-                              onPressed: widget.onToc,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onHorizontalDragUpdate: (details) {
+                            if (!tocModeEnabled) {
+                              return;
+                            }
+                            widget.onTocModeDragUpdate(details.delta.dx);
+                          },
+                          onHorizontalDragEnd: widget.onTocModeDragEnd,
+                          onHorizontalDragCancel: widget.onTocModeDragCancel,
+                          child: IgnorePointer(
+                            ignoring: false,
+                            child: Opacity(
+                              opacity: sideOpacity,
+                              child: ReaderDockActionPill(
+                                icon: Icons.menu_book_rounded,
+                                label: '\u76ee\u5f55',
+                                glass: glass,
+                                selected: widget.overlay == ReaderOverlay.toc,
+                                labelProgress: sideEase,
+                                compact: sideActive && tocShare < settingsShare,
+                                transparent: false,
+                                showContent: false,
+                                onPressed: widget.onToc,
+                              ),
                             ),
                           ),
                         ),
@@ -647,7 +741,7 @@ class _AdaptiveBottomMenuState extends State<AdaptiveBottomMenu> {
                           onRulerVisibilityChanged: (visible) {
                             setState(() => _progressExpanded = visible);
                           },
-                          onSeek: widget.onProgressSeek,
+                          onChapterSeek: widget.onProgressChapterSeek,
                           onScrubStart: widget.onProgressScrubStart,
                           onPressed: widget.onProgressPressed,
                         ),
@@ -684,13 +778,50 @@ class _AdaptiveBottomMenuState extends State<AdaptiveBottomMenu> {
                         child: IgnorePointer(
                           child: Opacity(
                             opacity: sideOpacity,
-                            child: ReaderDockActionContent(
-                              icon: Icons.menu_book_rounded,
-                              label: '\u76ee\u5f55',
-                              glass: glass,
-                              labelProgress: tocExpandedT,
-                              iconLeft: tocIconLeft,
-                              labelWidth: actionLabelWidth,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Opacity(
+                                  opacity: tocModeLayerActive
+                                      ? (1 - _tocModeFade.value)
+                                            .clamp(0.0, 1.0)
+                                            .toDouble()
+                                      : 1.0,
+                                  child: ReaderDockActionContent(
+                                    icon: widget.tocShowsBookmarks
+                                        ? Icons.bookmark_rounded
+                                        : Icons.menu_book_rounded,
+                                    label: widget.tocShowsBookmarks
+                                        ? '\u4e66\u7b7e'
+                                        : '\u76ee\u5f55',
+                                    glass: glass,
+                                    labelProgress: tocExpandedT,
+                                    iconLeft: tocIconLeft,
+                                    labelWidth: actionLabelWidth,
+                                  ),
+                                ),
+                                if (tocModeLayerActive)
+                                  Opacity(
+                                    opacity: _tocModeFade.value,
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(28),
+                                      child: Stack(
+                                        children: [
+                                          buildTocModeContent(
+                                            index: 0,
+                                            icon: Icons.menu_book_rounded,
+                                            label: '\u76ee\u5f55',
+                                          ),
+                                          buildTocModeContent(
+                                            index: 1,
+                                            icon: Icons.bookmark_rounded,
+                                            label: '\u4e66\u7b7e',
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                         ),

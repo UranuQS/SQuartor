@@ -25,10 +25,12 @@ mixin ReaderStateFields<T extends ReaderScreenWidget> on State<T> {
   // --- Instance fields ---
 
   InAppWebViewController? controller;
+  late BookEntry readerBook;
   late int chapterIndex;
   var page = 0;
   var pageCount = 1;
   var overlay = ReaderOverlay.chrome;
+  var tocShowsBookmarks = false;
   var isLoading = true;
   var sideOverlayDismissing = false;
   var chromeReturningFromSide = false;
@@ -41,7 +43,6 @@ mixin ReaderStateFields<T extends ReaderScreenWidget> on State<T> {
   Timer? styleInjectTimer;
   Timer? txtPaginationTimer;
   Timer? progressSeekTimer;
-  Timer? clockTimer;
   var overlayTransitionSerial = 0;
   var progressSeekSerial = 0;
   int? pendingProgressSeekChapter;
@@ -49,12 +50,21 @@ mixin ReaderStateFields<T extends ReaderScreenWidget> on State<T> {
   late final AnimationController tocAnimation;
   late final AnimationController settingsAnimation;
   late final AnimationController footerAnimation;
+  late final AnimationController bookmarkPullReturnAnimation;
+  late final AnimationController tocBookmarkSettleAnimation;
+  Animation<double>? bookmarkPullReturn;
+  Animation<double>? tocBookmarkSettle;
   MemoryImage? readerSnapshotImage;
   Uint8List? readerSnapshotBytes;
-  var now = DateTime.now();
   final readingStopwatch = Stopwatch();
   double dragDx = 0;
   double dragDy = 0;
+  double? tocBookmarkModePosition;
+  final tocBookmarkVisualNotifier = ValueNotifier<double>(0.0);
+  int? tocBookmarkLastHapticTick;
+  double bookmarkPullDy = 0;
+  var bookmarkPullActive = false;
+  var bookmarkPullCommitted = false;
   var pageDragActive = false;
   var dragMoveScheduled = false;
   var dragSession = 0;
@@ -65,6 +75,8 @@ mixin ReaderStateFields<T extends ReaderScreenWidget> on State<T> {
   late final ScrollController txtScrollController;
   List<FlutterTxtPage> txtPages = const [];
   List<FlutterTxtBlock> txtScrollBlocks = const [];
+  List<FlutterTxtPage>? cachedProgressWordPages;
+  List<int> cachedProgressPageWordCounts = const [];
   TxtLayoutMetrics? txtLayoutMetrics;
   String? txtPaginationSignature;
   String? txtRequestedSignature;
@@ -75,13 +87,16 @@ mixin ReaderStateFields<T extends ReaderScreenWidget> on State<T> {
   FootnotePopupData? footnotePopup;
   String? webEdgeTurnDirection;
   double webEdgeTurnProgress = 0;
+  ScrollEdgeTurnDirection? scrollEdgeTurnDirection;
+  double scrollEdgeTurnProgress = 0;
   Timer? webEdgeTurnResetTimer;
   final Set<String> epubWebViewFallbackChapters = {};
   final Set<String> registeredReaderFontFamilies = {};
 
   // --- Accessors for widget properties ---
 
-  BookEntry get book => widget.book;
+  BookEntry get book => readerBook;
+  BookEntry get currentBookSnapshot => readerBook;
   AppState get appState => widget.state;
 
   ReadingStyle get style => appState.style;
@@ -104,11 +119,13 @@ mixin ReaderStateFields<T extends ReaderScreenWidget> on State<T> {
     return ReaderPalette(
       id: base.id,
       label: base.label,
-      background: Color.lerp(
-        base.background,
-        appPalette.primary,
-        isDark ? .10 : .07,
-      )!,
+      background: base.id == ReaderBackgroundId.black
+          ? base.background
+          : Color.lerp(
+              base.background,
+              appPalette.primary,
+              isDark ? .10 : .07,
+            )!,
       text: Color.lerp(base.text, appPalette.text, .08)!,
       muted: Color.lerp(base.muted, appPalette.primary, .16)!,
     );
@@ -144,12 +161,139 @@ mixin ReaderStateFields<T extends ReaderScreenWidget> on State<T> {
     final safeChapter = chapterIndex.clamp(0, chapterCount - 1);
     final safePageCount = pageCount < 1 ? 1 : pageCount;
     final safePage = page.clamp(0, safePageCount - 1);
-    final isLastChapter = safeChapter == chapterCount - 1;
-    if (safePageCount <= 1) {
-      return isLastChapter ? 1.0 : (safeChapter / chapterCount);
+    final pageProgress =
+        exactCurrentChapterWordProgress() ??
+        chapterPageProgress(
+          chapter: safeChapter,
+          page: safePage,
+          pageCount: safePageCount,
+        );
+    final chapterWordCounts = book.chapters
+        .map((chapter) => chapter.wordCount ?? 0)
+        .toList(growable: false);
+    final totalWords = chapterWordCounts.fold<int>(
+      0,
+      (sum, count) => sum + (count > 0 ? count : 0),
+    );
+    if (totalWords > 0) {
+      final previousWords = chapterWordCounts
+          .take(safeChapter)
+          .fold<int>(0, (sum, count) => sum + (count > 0 ? count : 0));
+      final currentWords = chapterWordCounts[safeChapter].clamp(0, totalWords);
+      return ((previousWords + currentWords * pageProgress) / totalWords).clamp(
+        0.0,
+        1.0,
+      );
     }
-    final pageProgress = safePage / (safePageCount - 1);
+    return chapterBasedProgress(
+      chapter: safeChapter,
+      page: safePage,
+      pageCount: safePageCount,
+    );
+  }
+
+  double chapterPageProgress({
+    required int chapter,
+    required int page,
+    required int pageCount,
+  }) {
+    final safePageCount = pageCount < 1 ? 1 : pageCount;
+    final safePage = page.clamp(0, safePageCount - 1);
+    final isLastChapter = chapter == lastChapterIndex;
+    if (safePageCount <= 1) {
+      return isLastChapter ? 1.0 : 0.0;
+    }
+    return (safePage / (safePageCount - 1)).clamp(0.0, 1.0);
+  }
+
+  double? exactCurrentChapterWordProgress() {
+    if (usesVerticalScroll || txtPages.isEmpty) {
+      return null;
+    }
+    final safePage = page.clamp(0, txtPages.length - 1);
+    if (!identical(cachedProgressWordPages, txtPages)) {
+      cachedProgressWordPages = txtPages;
+      cachedProgressPageWordCounts = txtPages
+          .map(
+            (txtPage) => estimateReaderWordCount(
+              txtPage.blocks.map((block) => block.text).join('\n'),
+            ),
+          )
+          .toList(growable: false);
+    }
+    final pageWordCounts = cachedProgressPageWordCounts;
+    final totalWords = pageWordCounts.fold<int>(
+      0,
+      (sum, count) => sum + (count > 0 ? count : 0),
+    );
+    if (totalWords <= 0) {
+      return null;
+    }
+    if (safePage >= txtPages.length - 1) {
+      return 1.0;
+    }
+    final previousWords = pageWordCounts
+        .take(safePage)
+        .fold<int>(0, (sum, count) => sum + (count > 0 ? count : 0));
+    return (previousWords / totalWords).clamp(0.0, 1.0);
+  }
+
+  int estimateReaderWordCount(String text) {
+    return RegExp(
+      r'[\u3400-\u9FFF\uF900-\uFAFF]|[A-Za-z0-9]+',
+    ).allMatches(text).length;
+  }
+
+  double chapterBasedProgress({
+    required int chapter,
+    required int page,
+    required int pageCount,
+  }) {
+    final chapterCount = book.chapters.length;
+    if (chapterCount <= 0) {
+      return 0;
+    }
+    final safeChapter = chapter.clamp(0, chapterCount - 1);
+    final pageProgress = chapterPageProgress(
+      chapter: safeChapter,
+      page: page,
+      pageCount: pageCount,
+    );
+    if (pageCount <= 1 && safeChapter == chapterCount - 1) {
+      return 1.0;
+    }
     return ((safeChapter + pageProgress) / chapterCount).clamp(0.0, 1.0);
+  }
+
+  int chapterIndexForOverallProgressValue(double progress) {
+    final chapterCount = book.chapters.length;
+    if (chapterCount <= 0) {
+      return 0;
+    }
+    final clamped = progress.clamp(0.0, 1.0).toDouble();
+    if (clamped >= .999) {
+      return chapterCount - 1;
+    }
+    final chapterWordCounts = book.chapters
+        .map((chapter) => chapter.wordCount ?? 0)
+        .toList(growable: false);
+    final totalWords = chapterWordCounts.fold<int>(
+      0,
+      (sum, count) => sum + (count > 0 ? count : 0),
+    );
+    if (totalWords > 0) {
+      final targetWords = clamped * totalWords;
+      var cumulativeWords = 0;
+      for (var i = 0; i < chapterWordCounts.length; i++) {
+        final count = chapterWordCounts[i] > 0 ? chapterWordCounts[i] : 0;
+        final nextWords = cumulativeWords + count;
+        if (targetWords < nextWords || i == chapterWordCounts.length - 1) {
+          return i;
+        }
+        cumulativeWords = nextWords;
+      }
+    }
+    return (clamped * chapterCount).floor().clamp(0, chapterCount - 1);
   }
 
   // --- Helper methods ---
@@ -310,6 +454,21 @@ mixin ReaderStateFields<T extends ReaderScreenWidget> on State<T> {
   Future<void> onReaderDragEnd(DragEndDetails details);
   void onReaderDragCancel();
 
+  // From ReaderBookmarkMixin
+  bool get currentPageBookmarked;
+  void onBookmarkPullStart(DragStartDetails details, Size screenSize);
+  void onBookmarkPullUpdate(DragUpdateDetails details);
+  Future<void> onBookmarkPullEnd(DragEndDetails details);
+  void onBookmarkPullCancel();
+  Future<void> addCurrentBookmark();
+  String currentBookmarkSnippet();
+  double readerBookmarkPullOffset();
+  void setScrollEdgeTurnProgress(
+    ScrollEdgeTurnDirection? direction,
+    double progress,
+  );
+  double readerContentPullOffset();
+
   // From ReaderOverlayMixin
   double overlaySlideProgress(AnimationController controller);
   bool isSideOverlay(ReaderOverlay overlay);
@@ -318,7 +477,10 @@ mixin ReaderStateFields<T extends ReaderScreenWidget> on State<T> {
   void clearReaderSnapshot({bool notify = true});
   void showFootnote(String text, Offset? globalPosition);
   void hideFootnote();
+  void animateTocBookmarkModeTo(bool showBookmarks);
   void showToc();
+  void showBookmarks();
+  void toggleTocBookmarkMode();
   void showSettings();
   void onReaderStyleChanged();
   void applyReaderProgressPayload(Object? payload, {int? expectedToken});

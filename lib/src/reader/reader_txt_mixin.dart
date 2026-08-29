@@ -127,6 +127,7 @@ mixin ReaderTxtMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
             chapterIndex: chapterIndex,
             page: targetPage,
             pageCount: safePageCount,
+            displayProgress: overallProgress,
           ),
         );
       }
@@ -299,6 +300,7 @@ mixin ReaderTxtMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
         chapterIndex: chapterIndex,
         page: safePage,
         pageCount: safePageCount,
+        displayProgress: overallProgress,
       ),
     );
   }
@@ -325,6 +327,7 @@ mixin ReaderTxtMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
         chapterIndex: chapterIndex,
         page: safePage,
         pageCount: safePageCount,
+        displayProgress: overallProgress,
       ),
     );
   }
@@ -896,10 +899,16 @@ mixin ReaderTxtMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
             linkColor: appPalette.primarySoft,
             onTapUp: onReaderTap,
             onProgressChanged: onTxtScrollProgressChanged,
+            onEdgeTurnProgress: setScrollEdgeTurnProgress,
             onEdgePrevious: previousTxtPage,
             onEdgeNext: nextTxtPage,
             onLinkTap: openInternalLink,
             onFootnoteTap: showFootnote,
+            onVerticalDragStart: (details) =>
+                onBookmarkPullStart(details, constraints.biggest),
+            onVerticalDragUpdate: onBookmarkPullUpdate,
+            onVerticalDragEnd: onBookmarkPullEnd,
+            onVerticalDragCancel: onBookmarkPullCancel,
           );
         }
         if (txtPages.isEmpty) {
@@ -924,6 +933,11 @@ mixin ReaderTxtMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
           onEdgeNext: nextTxtPage,
           onLinkTap: openInternalLink,
           onFootnoteTap: showFootnote,
+          onVerticalDragStart: (details) =>
+              onBookmarkPullStart(details, constraints.biggest),
+          onVerticalDragUpdate: onBookmarkPullUpdate,
+          onVerticalDragEnd: onBookmarkPullEnd,
+          onVerticalDragCancel: onBookmarkPullCancel,
         );
       },
     );

@@ -1,6 +1,8 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models.dart';
 import '../typography.dart';
@@ -28,6 +30,109 @@ Future<T?> showShelfFloatingSheet<T>({
         child: Padding(
           padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + insets.bottom),
           child: _ShelfFloatingSheet(palette: palette, child: child),
+        ),
+      );
+    },
+  );
+}
+
+Future<T?> showShelfFollowerMenu<T>({
+  required BuildContext context,
+  required LayerLink anchorLink,
+  required AppPalette palette,
+  required Widget child,
+  double width = 318,
+}) {
+  return showGeneralDialog<T>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: '\u5173\u95ed',
+    barrierColor: Colors.black.withValues(alpha: .18),
+    transitionDuration: const Duration(milliseconds: 180),
+    pageBuilder: (context, _, _) {
+      return Stack(
+        children: [
+          CompositedTransformFollower(
+            link: anchorLink,
+            showWhenUnlinked: false,
+            targetAnchor: Alignment.bottomRight,
+            followerAnchor: Alignment.topRight,
+            offset: const Offset(0, 12),
+            child: _ShelfFloatingSurface(
+              palette: palette,
+              maxWidth: width,
+              child: child,
+            ),
+          ),
+        ],
+      );
+    },
+    transitionBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutBack,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return FadeTransition(
+        opacity: animation,
+        child: ScaleTransition(
+          alignment: Alignment.topCenter,
+          scale: Tween<double>(begin: .88, end: 1).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
+}
+
+Future<T?> showShelfAnchoredMenu<T>({
+  required BuildContext context,
+  required BuildContext anchorContext,
+  required AppPalette palette,
+  required Widget child,
+  double width = 318,
+}) {
+  final overlay = Overlay.of(anchorContext).context.findRenderObject();
+  final anchor = anchorContext.findRenderObject();
+  if (overlay is! RenderBox || anchor is! RenderBox) {
+    return showShelfFloatingSheet<T>(
+      context: context,
+      palette: palette,
+      child: child,
+    );
+  }
+
+  final anchorRect = MatrixUtils.transformRect(
+    anchor.getTransformTo(overlay),
+    Offset.zero & anchor.size,
+  );
+
+  return showGeneralDialog<T>(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: '关闭',
+    barrierColor: Colors.black.withValues(alpha: .18),
+    transitionDuration: const Duration(milliseconds: 180),
+    pageBuilder: (context, _, _) {
+      return _ShelfAnchoredMenuLayer(
+        anchorRect: anchorRect,
+        maxWidth: width,
+        palette: palette,
+        child: child,
+      );
+    },
+    transitionBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutBack,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return FadeTransition(
+        opacity: animation,
+        child: ScaleTransition(
+          alignment: Alignment.center,
+          scale: Tween<double>(begin: .88, end: 1).animate(curved),
+          child: child,
         ),
       );
     },
@@ -78,6 +183,207 @@ Future<T?> showShelfFloatingDialog<T>({
       );
     },
   );
+}
+
+class _ShelfAnchoredMenuLayer extends StatelessWidget {
+  const _ShelfAnchoredMenuLayer({
+    required this.anchorRect,
+    required this.maxWidth,
+    required this.palette,
+    required this.child,
+  });
+
+  final Rect anchorRect;
+  final double maxWidth;
+  final AppPalette palette;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    return CustomSingleChildLayout(
+      delegate: _ShelfAnchoredMenuLayoutDelegate(
+        anchorRect: anchorRect,
+        padding: media.padding,
+        maxWidth: maxWidth,
+      ),
+      child: _ShelfFloatingSurface(
+        palette: palette,
+        maxWidth: maxWidth,
+        child: child,
+      ),
+    );
+  }
+}
+
+class _ShelfAnchoredMenuLayoutDelegate extends SingleChildLayoutDelegate {
+  const _ShelfAnchoredMenuLayoutDelegate({
+    required this.anchorRect,
+    required this.padding,
+    required this.maxWidth,
+  });
+
+  final Rect anchorRect;
+  final EdgeInsets padding;
+  final double maxWidth;
+
+  EdgeInsets get _gutter {
+    final inset = kMinInteractiveDimension / 3;
+    return EdgeInsets.fromLTRB(
+      padding.left + inset,
+      padding.top + inset,
+      padding.right + inset,
+      padding.bottom + inset,
+    );
+  }
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
+    final gutter = _gutter;
+    final width = math.min<double>(
+      maxWidth,
+      math.max<double>(0, constraints.maxWidth - gutter.horizontal),
+    );
+    return BoxConstraints(
+      minWidth: width,
+      maxWidth: width,
+      maxHeight: math.max(0, constraints.maxHeight - gutter.vertical),
+    );
+  }
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final gutter = _gutter;
+    final safeRect = Rect.fromLTRB(
+      gutter.left,
+      gutter.top,
+      size.width - gutter.right,
+      size.height - gutter.bottom,
+    );
+    final preferred = Offset(
+      anchorRect.center.dx - childSize.width / 2,
+      anchorRect.center.dy - childSize.height / 2,
+    );
+    final dx = preferred.dx.clamp(
+      safeRect.left,
+      safeRect.right - childSize.width,
+    );
+    final dy = preferred.dy.clamp(
+      safeRect.top,
+      safeRect.bottom - childSize.height,
+    );
+    return Offset(dx.toDouble(), dy.toDouble());
+  }
+
+  @override
+  bool shouldRelayout(covariant _ShelfAnchoredMenuLayoutDelegate oldDelegate) {
+    return anchorRect != oldDelegate.anchorRect ||
+        padding != oldDelegate.padding ||
+        maxWidth != oldDelegate.maxWidth;
+  }
+}
+
+class _ShelfFollowerMenuSurface<T> extends StatefulWidget {
+  const _ShelfFollowerMenuSurface({
+    required this.palette,
+    required this.maxWidth,
+    required this.child,
+    required this.onSelected,
+  });
+
+  final AppPalette palette;
+  final double maxWidth;
+  final Widget child;
+  final ValueChanged<T?> onSelected;
+
+  @override
+  State<_ShelfFollowerMenuSurface<T>> createState() =>
+      _ShelfFollowerMenuSurfaceState<T>();
+}
+
+class _ShelfFollowerMenuSurfaceState<T>
+    extends State<_ShelfFollowerMenuSurface<T>>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 180),
+      reverseDuration: const Duration(milliseconds: 140),
+    )..forward();
+    _scale = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeOutBack,
+      reverseCurve: Curves.easeInCubic,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      type: MaterialType.transparency,
+      child: ScaleTransition(
+        alignment: Alignment.topCenter,
+        scale: Tween<double>(begin: .88, end: 1).animate(_scale),
+        child: _ShelfMenuResultScope<T>(
+          onSelected: widget.onSelected,
+          child: _ShelfFloatingSurface(
+            palette: widget.palette,
+            maxWidth: widget.maxWidth,
+            child: widget.child,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ShelfMenuResultScope<T> extends StatelessWidget {
+  const _ShelfMenuResultScope({required this.onSelected, required this.child});
+
+  final ValueChanged<T?> onSelected;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Navigator(
+      onGenerateRoute: (_) => PageRouteBuilder<T>(
+        opaque: false,
+        pageBuilder: (routeContext, animation, secondaryAnimation) {
+          return _ShelfMenuResultBridge<T>(
+            onSelected: onSelected,
+            child: child,
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ShelfMenuResultBridge<T> extends StatelessWidget {
+  const _ShelfMenuResultBridge({required this.onSelected, required this.child});
+
+  final ValueChanged<T?> onSelected;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope<T>(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) => onSelected(result),
+      child: child,
+    );
+  }
 }
 
 class _ShelfFloatingSheet extends StatelessWidget {
@@ -164,14 +470,14 @@ class ShelfActionList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 18),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 22),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (title != null) ...[
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 4, 14, 10),
+              padding: const EdgeInsets.only(bottom: 12),
               child: Text(
                 title!,
                 style: TextStyle(
@@ -181,7 +487,10 @@ class ShelfActionList extends StatelessWidget {
               ),
             ),
           ],
-          ...children,
+          for (var i = 0; i < children.length; i++) ...[
+            if (i > 0) const SizedBox(height: 18),
+            children[i],
+          ],
         ],
       ),
     );
@@ -208,18 +517,65 @@ class ShelfActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      leading: Icon(icon, color: palette.accentText),
-      title: Text(
-        title,
-        style: TextStyle(color: palette.text, fontWeight: AppTextWeight.medium),
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(18),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: SizedBox(
+          height: 64,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 48,
+                child: Center(
+                  child: Icon(icon, color: palette.accentText, size: 28),
+                ),
+              ),
+              const SizedBox(width: 18),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: palette.text,
+                        fontSize: 20,
+                        height: 1.12,
+                        fontWeight: AppTextWeight.medium,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        subtitle!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: palette.muted,
+                          fontSize: 16,
+                          height: 1.12,
+                          fontWeight: AppTextWeight.regular,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (trailing != null) ...[
+                const SizedBox(width: 12),
+                SizedBox(width: 40, child: trailing!),
+              ],
+            ],
+          ),
+        ),
       ),
-      subtitle: subtitle == null
-          ? null
-          : Text(subtitle!, style: TextStyle(color: palette.muted)),
-      trailing: trailing,
-      onTap: onTap,
     );
   }
 }
@@ -334,6 +690,22 @@ class AddExistingBooksSheet extends StatefulWidget {
 
 class _AddExistingBooksSheetState extends State<AddExistingBooksSheet> {
   final Set<String> _selectedIds = {};
+  final _listKey = GlobalKey();
+  final _scrollController = ScrollController();
+  bool? _dragSelectionTarget;
+  Offset? _selectionPointerStart;
+  int? _pendingDragIndex;
+  int? _lastDragIndex;
+
+  static const double _bookRowExtent = 83;
+  static const double _selectionZoneWidth = 96;
+  static const double _dragSlop = 10;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -398,80 +770,90 @@ class _AddExistingBooksSheetState extends State<AddExistingBooksSheet> {
           ),
           ConstrainedBox(
             constraints: BoxConstraints(maxHeight: height * .56),
-            child: ListView.separated(
-              shrinkWrap: true,
-              physics: const ClampingScrollPhysics(),
-              itemCount: books.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 1),
-              itemBuilder: (context, index) {
-                final book = books[index];
-                final selected = _selectedIds.contains(book.id);
-                return InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: () {
-                    setState(() {
-                      if (selected) {
-                        _selectedIds.remove(book.id);
-                      } else {
-                        _selectedIds.add(book.id);
-                      }
-                    });
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 10,
-                    ),
-                    child: Row(
-                      children: [
-                        BookCover(
-                          book: book,
-                          palette: palette,
-                          width: 44,
-                          height: 62,
-                          radius: 9,
+            child: Listener(
+              key: _listKey,
+              onPointerDown: (event) => _prepareDragSelection(event, books),
+              onPointerMove: (event) => _updateDragSelection(event, books),
+              onPointerUp: (_) => _endDragSelection(),
+              onPointerCancel: (_) => _endDragSelection(),
+              child: ListView.builder(
+                controller: _scrollController,
+                shrinkWrap: true,
+                physics: const ClampingScrollPhysics(),
+                itemCount: books.length,
+                itemBuilder: (context, index) {
+                  final book = books[index];
+                  final selected = _selectedIds.contains(book.id);
+                  return SizedBox(
+                    height: _bookRowExtent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () => _toggleBook(book.id),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 10,
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                book.title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: palette.text,
-                                  fontSize: 15,
-                                  height: 1.25,
-                                  fontWeight: AppTextWeight.medium,
+                        child: Row(
+                          children: [
+                            BookCover(
+                              book: book,
+                              palette: palette,
+                              width: 44,
+                              height: 62,
+                              radius: 9,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    book.title,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: palette.text,
+                                      fontSize: 15,
+                                      height: 1.25,
+                                      fontWeight: AppTextWeight.medium,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    '${book.author} · ${bookWordCountLabel(book.wordCount)}',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: palette.muted,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            SizedBox(
+                              width: 44,
+                              height: double.infinity,
+                              child: Center(
+                                child: Icon(
+                                  selected
+                                      ? Icons.check_circle_rounded
+                                      : Icons.circle_outlined,
+                                  color: selected
+                                      ? palette.accentText
+                                      : palette.subtle,
                                 ),
                               ),
-                              const SizedBox(height: 6),
-                              Text(
-                                '${book.author} · ${bookWordCountLabel(book.wordCount)}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: palette.muted,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 10),
-                        Icon(
-                          selected
-                              ? Icons.check_circle_rounded
-                              : Icons.circle_outlined,
-                          color: selected ? palette.accentText : palette.subtle,
-                        ),
-                      ],
+                      ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
           ),
           const SizedBox(height: 14),
@@ -500,5 +882,99 @@ class _AddExistingBooksSheetState extends State<AddExistingBooksSheet> {
         ],
       ),
     );
+  }
+
+  void _toggleBook(String bookId) {
+    setState(() {
+      if (_selectedIds.contains(bookId)) {
+        _selectedIds.remove(bookId);
+      } else {
+        _selectedIds.add(bookId);
+      }
+    });
+    HapticFeedback.selectionClick();
+  }
+
+  void _prepareDragSelection(PointerDownEvent event, List<BookEntry> books) {
+    final box = _listKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || books.isEmpty) {
+      return;
+    }
+    final local = box.globalToLocal(event.position);
+    if (local.dx < box.size.width - _selectionZoneWidth) {
+      return;
+    }
+    final index = _bookIndexAt(local.dy, books.length);
+    if (index == null) {
+      return;
+    }
+    _selectionPointerStart = local;
+    _pendingDragIndex = index;
+    _lastDragIndex = null;
+  }
+
+  void _updateDragSelection(PointerMoveEvent event, List<BookEntry> books) {
+    final start = _selectionPointerStart;
+    final pendingIndex = _pendingDragIndex;
+    if (start == null || pendingIndex == null || books.isEmpty) {
+      return;
+    }
+    final box = _listKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) {
+      return;
+    }
+    final local = box.globalToLocal(event.position);
+    if (_dragSelectionTarget == null) {
+      final delta = local - start;
+      if (delta.distance < _dragSlop) {
+        return;
+      }
+      if (delta.dy.abs() > delta.dx.abs() * 1.35) {
+        _endDragSelection();
+        return;
+      }
+      _dragSelectionTarget = !_selectedIds.contains(books[pendingIndex].id);
+      _applyDragSelection(pendingIndex, books);
+    }
+    final index = _bookIndexAt(local.dy, books.length);
+    if (index != null) {
+      _applyDragSelection(index, books);
+    }
+  }
+
+  void _endDragSelection() {
+    _dragSelectionTarget = null;
+    _selectionPointerStart = null;
+    _pendingDragIndex = null;
+    _lastDragIndex = null;
+  }
+
+  int? _bookIndexAt(double localDy, int bookCount) {
+    final y = localDy + _scrollController.offset;
+    final index = (y / _bookRowExtent).floor();
+    if (index < 0 || index >= bookCount) {
+      return null;
+    }
+    return index;
+  }
+
+  void _applyDragSelection(int index, List<BookEntry> books) {
+    if (_lastDragIndex == index) {
+      return;
+    }
+    final target = _dragSelectionTarget;
+    if (target == null) {
+      return;
+    }
+    _lastDragIndex = index;
+    final bookId = books[index].id;
+    setState(() {
+      if (target) {
+        _selectedIds.add(bookId);
+      } else {
+        _selectedIds.remove(bookId);
+      }
+    });
+    HapticFeedback.selectionClick();
   }
 }

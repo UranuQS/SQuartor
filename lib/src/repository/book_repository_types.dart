@@ -7,6 +7,7 @@ class BookRepositorySnapshot {
     required this.shelves,
     required this.readingStats,
     required this.style,
+    required this.cloudSyncSettings,
   });
 
   final List<BookEntry> books;
@@ -14,6 +15,7 @@ class BookRepositorySnapshot {
   final List<String> shelves;
   final Map<String, Map<String, int>> readingStats;
   final ReadingStyle style;
+  final CloudSyncSettings cloudSyncSettings;
 }
 
 class PendingOpenBook {

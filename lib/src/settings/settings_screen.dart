@@ -1,4 +1,6 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../app_state.dart';
 import '../models.dart';
@@ -34,31 +36,98 @@ class SettingsScreen extends StatelessWidget {
               entries: [
                 SettingEntry(
                   icon: Icons.format_paint_rounded,
+                  iconColor: const Color(0xFFE89B71),
                   title: '主题与纸张',
                   subtitle: '设置应用主题和阅读器纸张',
                   palette: palette,
                   onTap: () => _openThemePage(context),
                 ),
                 SettingEntry(
-                  icon: Icons.text_fields_rounded,
-                  title: '文本格式化',
-                  subtitle: '字号、行高、段距和页边距',
-                  palette: palette,
-                  onTap: () => _openLayoutPage(context),
-                ),
-                SettingEntry(
                   icon: Icons.font_download_rounded,
+                  iconColor: const Color(0xFF7388C1),
                   title: '字体',
                   subtitle:
                       '应用：${state.style.appFontName ?? '系统'} · 书籍：${state.style.fontName ?? '系统'}',
                   palette: palette,
                   onTap: () => _openFontPage(context),
                 ),
+                SettingEntry(
+                  icon: Icons.format_size_rounded,
+                  iconColor: const Color(0xFF8E7CC3),
+                  title: '文本格式化',
+                  subtitle: '调整字号、行高、段距、字距和页边距',
+                  palette: palette,
+                  onTap: () => _openLayoutPage(context),
+                ),
+                SettingEntry(
+                  icon: Icons.cloud_sync_rounded,
+                  iconColor: const Color(0xFF5CA4A9),
+                  title: '云同步',
+                  subtitle: state.cloudSyncSettings.configured
+                      ? 'WebDAV 已配置，可同步阅读进度和应用设置'
+                      : '用 WebDAV 同步阅读进度、书签和应用设置',
+                  palette: palette,
+                  onTap: () => _openCloudSyncPage(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: 26),
+            SettingsGroup(
+              palette: palette,
+              title: '关于',
+              entries: [
+                SettingEntry(
+                  icon: Icons.info_outline_rounded,
+                  title: 'SQuartor',
+                  subtitle: 'com.squartor.reader · 1.0.0+1 release',
+                  palette: palette,
+                  onTap: () => _showAppInfo(context),
+                ),
+                SettingEntry(
+                  icon: Icons.archive_outlined,
+                  title: 'GitHub 仓库',
+                  subtitle: '给本项目点颗 star，帮助更多人发现',
+                  palette: palette,
+                  onTap: () => _openGithub(context),
+                ),
               ],
             ),
           ],
         );
       },
+    );
+  }
+
+  void _showAppInfo(BuildContext context) {
+    showAboutDialog(
+      context: context,
+      applicationName: 'SQuartor',
+      applicationVersion: '1.0.0+1 release',
+      applicationIcon: const Icon(Icons.auto_stories_rounded, size: 42),
+      applicationLegalese: '本地优先的轻小说阅读器。',
+    );
+  }
+
+  void _showComingSoon(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  void _openGithub(BuildContext context) {
+    final uri = Uri.parse('https://github.com/UranuQS/SQuartor');
+    launchUrl(uri, mode: LaunchMode.externalApplication).then((opened) {
+      if (!opened && context.mounted) {
+        _showComingSoon(context, '没有找到可打开 GitHub 链接的应用。');
+      }
+    });
+  }
+
+  void _openCloudSyncPage(BuildContext context) {
+    Navigator.of(context).push(
+      CupertinoPageRoute<void>(
+        builder: (context) => _CloudSyncPage(state: state),
+      ),
     );
   }
 
@@ -398,8 +467,8 @@ class SettingsScreen extends StatelessWidget {
 
   void _pushDetail(BuildContext context, String title, DetailBuilder builder) {
     Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) =>
+      CupertinoPageRoute<void>(
+        builder: (context) =>
             SettingsDetailPage(state: state, title: title, builder: builder),
       ),
     );
@@ -500,5 +569,283 @@ class SettingsScreen extends StatelessWidget {
       return null;
     }
     return 0xFF000000 | int.parse(value, radix: 16);
+  }
+}
+
+class _CloudSyncPage extends StatefulWidget {
+  const _CloudSyncPage({required this.state});
+
+  final AppState state;
+
+  @override
+  State<_CloudSyncPage> createState() => _CloudSyncPageState();
+}
+
+class _CloudSyncPageState extends State<_CloudSyncPage> {
+  late final TextEditingController _endpointController;
+  late final TextEditingController _usernameController;
+  late final TextEditingController _passwordController;
+  var _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final settings = widget.state.cloudSyncSettings;
+    _endpointController = TextEditingController(text: settings.endpoint);
+    _usernameController = TextEditingController(text: settings.username);
+    _passwordController = TextEditingController(text: settings.password);
+  }
+
+  @override
+  void dispose() {
+    _endpointController.dispose();
+    _usernameController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: widget.state.settingsChanges,
+      builder: (context, _) {
+        final palette = widget.state.palette;
+        final settings = widget.state.cloudSyncSettings;
+        return Scaffold(
+          backgroundColor: palette.background,
+          body: SafeArea(
+            bottom: false,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(18, 26, 18, 28),
+              children: [
+                Row(
+                  children: [
+                    IconButton(
+                      onPressed: _busy ? null : () => Navigator.pop(context),
+                      icon: Icon(Icons.arrow_back_rounded, color: palette.text),
+                    ),
+                    const SizedBox(width: 4),
+                    Text('云同步', style: settingsTitleStyle(palette)),
+                  ],
+                ),
+                const SizedBox(height: 22),
+                SettingsCard(
+                  palette: palette,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SectionTitle('WebDAV', palette),
+                      const SizedBox(height: 10),
+                      Text(
+                        '同步阅读进度、书签、阅读统计、书架归属和应用设置，不上传书籍正文。',
+                        style: TextStyle(color: palette.muted, height: 1.5),
+                      ),
+                      const SizedBox(height: 16),
+                      _CloudTextField(
+                        controller: _endpointController,
+                        palette: palette,
+                        label: 'WebDAV 地址',
+                        hint: 'https://dav.jianguoyun.com/dav/',
+                        keyboardType: TextInputType.url,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '会自动创建/使用 SQuartor/squartor-sync-v1.json。',
+                        style: TextStyle(
+                          color: palette.subtle,
+                          height: 1.35,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _CloudTextField(
+                        controller: _usernameController,
+                        palette: palette,
+                        label: '账号',
+                      ),
+                      const SizedBox(height: 12),
+                      _CloudTextField(
+                        controller: _passwordController,
+                        palette: palette,
+                        label: '密码',
+                        obscureText: true,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SettingsCard(
+                  palette: palette,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SectionTitle('操作', palette),
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        onPressed: _busy ? null : _save,
+                        icon: const Icon(Icons.save_rounded),
+                        label: const Text('保存配置'),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: _busy
+                            ? null
+                            : () => _run(
+                                action: widget.state.uploadCloudSync,
+                                success: '已上传本机同步数据',
+                              ),
+                        icon: const Icon(Icons.cloud_upload_rounded),
+                        label: const Text('上传本机数据'),
+                      ),
+                      const SizedBox(height: 10),
+                      OutlinedButton.icon(
+                        onPressed: _busy
+                            ? null
+                            : () => _run(
+                                action: widget.state.downloadCloudSync,
+                                success: '已下载并合并远端数据',
+                              ),
+                        icon: const Icon(Icons.cloud_download_rounded),
+                        label: const Text('下载远端数据'),
+                      ),
+                      if (_busy) ...[
+                        const SizedBox(height: 16),
+                        LinearProgressIndicator(color: palette.primary),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  [
+                    if (settings.lastUploadAt != null)
+                      '上次上传：${_timeLabel(settings.lastUploadAt!)}',
+                    if (settings.lastDownloadAt != null)
+                      '上次下载：${_timeLabel(settings.lastDownloadAt!)}',
+                    if (settings.lastUploadAt == null &&
+                        settings.lastDownloadAt == null)
+                      '还没有同步记录',
+                  ].join('\n'),
+                  style: TextStyle(color: palette.muted, height: 1.45),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _save() async {
+    try {
+      await widget.state.saveCloudSyncSettings(_settingsFromForm());
+      if (mounted) {
+        _message('配置已保存');
+      }
+    } catch (error) {
+      if (mounted) {
+        _message(error.toString());
+      }
+    }
+  }
+
+  Future<void> _run({
+    required Future<void> Function() action,
+    required String success,
+  }) async {
+    setState(() => _busy = true);
+    try {
+      await widget.state.saveCloudSyncSettings(_settingsFromForm());
+      await action();
+      if (mounted) {
+        _message(success);
+      }
+    } catch (error) {
+      if (mounted) {
+        _message(error.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  CloudSyncSettings _settingsFromForm() {
+    final endpoint = _endpointController.text.trim();
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text;
+    final current = widget.state.cloudSyncSettings;
+    return current.copyWith(
+      enabled:
+          endpoint.isNotEmpty && username.isNotEmpty && password.isNotEmpty,
+      endpoint: endpoint,
+      username: username,
+      password: password,
+    );
+  }
+
+  void _message(String message) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  String _timeLabel(DateTime time) {
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${time.year}-${two(time.month)}-${two(time.day)} '
+        '${two(time.hour)}:${two(time.minute)}';
+  }
+}
+
+class _CloudTextField extends StatelessWidget {
+  const _CloudTextField({
+    required this.controller,
+    required this.palette,
+    required this.label,
+    this.hint,
+    this.obscureText = false,
+    this.keyboardType,
+  });
+
+  final TextEditingController controller;
+  final AppPalette palette;
+  final String label;
+  final String? hint;
+  final bool obscureText;
+  final TextInputType? keyboardType;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      obscureText: obscureText,
+      keyboardType: keyboardType,
+      style: TextStyle(color: palette.text),
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        labelStyle: TextStyle(color: palette.muted),
+        hintStyle: TextStyle(color: palette.subtle),
+        filled: true,
+        fillColor: palette.cardAlt.withValues(
+          alpha: palette.isLight ? .55 : .5,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: palette.line.withValues(alpha: .35)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: palette.line.withValues(alpha: .26)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: palette.primarySoft, width: 1.2),
+        ),
+      ),
+    );
   }
 }

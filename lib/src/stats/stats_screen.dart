@@ -59,8 +59,22 @@ class _StatsScreenState extends State<StatsScreen> {
                   onPressed: () {
                     HapticFeedback.selectionClick();
                     Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => StatsDetailScreen(state: widget.state),
+                      PageRouteBuilder<void>(
+                        transitionDuration: const Duration(milliseconds: 200),
+                        reverseTransitionDuration: const Duration(milliseconds: 200),
+                        pageBuilder: (context, animation, secondaryAnimation) =>
+                            StatsDetailScreen(state: widget.state),
+                        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                          return SlideTransition(
+                            position: animation.drive(
+                              Tween(
+                                begin: const Offset(1.0, 0.0),
+                                end: Offset.zero,
+                              ).chain(CurveTween(curve: Curves.easeOutCubic)),
+                            ),
+                            child: child,
+                          );
+                        },
                       ),
                     );
                   },

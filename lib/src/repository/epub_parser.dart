@@ -471,6 +471,34 @@ class EpubParser {
     return count;
   }
 
+  static Future<List<ReaderChapter>> estimateGeneratedChapterWordCounts(
+    List<ReaderChapter> chapters, {
+    required int Function(String) estimateWordCount,
+  }) async {
+    final estimated = <ReaderChapter>[];
+    for (final chapter in chapters) {
+      if (chapter.filePath.isEmpty) {
+        estimated.add(chapter);
+        continue;
+      }
+      final file = File(chapter.filePath);
+      if (!await file.exists()) {
+        estimated.add(chapter);
+        continue;
+      }
+      try {
+        final document = html_parser.parse(await file.readAsString());
+        final text =
+            document.body?.text ?? document.documentElement?.text ?? '';
+        estimated.add(chapter.copyWith(wordCount: estimateWordCount(text)));
+      } catch (_) {
+        // Keep the rest of the book usable if one generated chapter is broken.
+        estimated.add(chapter);
+      }
+    }
+    return estimated;
+  }
+
   // --- EPUB href/path utilities ---
 
   static String safeJoin(String root, String relativePath) {

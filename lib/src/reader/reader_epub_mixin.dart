@@ -679,7 +679,8 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
   let edgeProgressTimer = null;
   let touchLastY = null;
   let edgePull = 0;
-  const edgeTurnThreshold = 132;
+  const edgeTurnThreshold = 176;
+  const edgeTurnProgressExponent = 1.35;
   function scheduleLayout() {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(function() { window.SQuartor.layout(); }, 50);
@@ -691,7 +692,8 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
   }
   function sendEdgeProgress(pull) {
     if (!scrollMode || !window.flutter_inappwebview) return;
-    const progress = Math.min(1, Math.abs(pull) / edgeTurnThreshold);
+    const rawProgress = Math.min(1, Math.abs(pull) / edgeTurnThreshold);
+    const progress = Math.pow(rawProgress, edgeTurnProgressExponent);
     clearTimeout(edgeProgressTimer);
     if (progress <= 0.02) {
       window.flutter_inappwebview.callHandler('squartorEvent', {
@@ -830,15 +832,7 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
     if (!mounted || result is! String || result.isEmpty) {
       return;
     }
-    await Navigator.of(context).push<void>(
-      PageRouteBuilder<void>(
-        opaque: true,
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            FullscreenImageViewer(source: result),
-      ),
-    );
+    await Navigator.of(context).push<void>(readerImageViewerRoute(result));
   }
 
   @override
@@ -943,14 +937,19 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
         (webEdgeTurnProgress - clamped).abs() < .02) {
       return;
     }
-    setState(() {
-      webEdgeTurnDirection = direction;
-      webEdgeTurnProgress = clamped;
-    });
+    webEdgeTurnDirection = direction;
+    webEdgeTurnProgress = clamped;
+    setScrollEdgeTurnProgress(
+      direction == 'previous'
+          ? ScrollEdgeTurnDirection.previous
+          : ScrollEdgeTurnDirection.next,
+      clamped,
+    );
     if (clamped > 0) {
       webEdgeTurnResetTimer = Timer(const Duration(milliseconds: 180), () {
         if (mounted) {
-          setState(() => webEdgeTurnProgress = 0);
+          webEdgeTurnProgress = 0;
+          setScrollEdgeTurnProgress(null, 0);
         }
       });
     }

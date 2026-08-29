@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SQuartor Shelf Blocks</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #071018;
+      --card: rgba(23, 40, 56, .82);
+      --card2: rgba(28, 50, 70, .9);
+      --text: #eaf3ff;
+      --muted: #9fb2c7;
+      --line: rgba(169, 213, 255, .18);
+      --accent: #a9d5ff;
+      --accent2: #5f93c2;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(95,147,194,.24), transparent 32%),
+        linear-gradient(180deg, #071018, #050a0f);
+      font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+      color: var(--text);
+      padding: 28px;
+    }
+    h1 { margin: 0 0 8px; font-size: 28px; letter-spacing: -1px; }
+    p { margin: 0; color: var(--muted); }
+    .grid {
+      margin-top: 26px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(300px, 1fr));
+      gap: 22px;
+      align-items: start;
+    }
+    .phone {
+      width: 360px;
+      height: 780px;
+      margin: auto;
+      border-radius: 34px;
+      background: rgba(5, 10, 15, .86);
+      border: 1px solid rgba(169, 213, 255, .12);
+      box-shadow: 0 22px 60px rgba(0,0,0,.42);
+      overflow: hidden;
+      position: relative;
+    }
+    .screen {
+      position: absolute;
+      inset: 0;
+      padding: 34px 18px 92px;
+    }
+    .title {
+      font-size: 30px;
+      font-weight: 800;
+      margin-bottom: 18px;
+    }
+    .tabs {
+      display: flex;
+      gap: 32px;
+      color: var(--muted);
+      margin: 0 0 20px 8px;
+      font-weight: 600;
+    }
+    .tabs span:first-child { color: var(--accent); }
+    .section {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 19px;
+      font-weight: 800;
+      margin-bottom: 14px;
+    }
+    .block {
+      background: var(--card);
+      border-radius: 24px;
+      padding: 14px;
+      margin-bottom: 13px;
+      position: relative;
+      border: 1px solid rgba(169, 213, 255, .04);
+    }
+    .block-head {
+      display: grid;
+      grid-template-columns: 72px 1fr auto;
+      gap: 12px;
+      align-items: center;
+    }
+    .cover-stack {
+      width: 72px;
+      height: 94px;
+      position: relative;
+    }
+    .cover {
+      position: absolute;
+      width: 58px;
+      height: 82px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #70a7d8, #f4b0cf);
+      box-shadow: 0 8px 18px rgba(0,0,0,.28);
+      border: 1px solid rgba(255,255,255,.18);
+    }
+    .cover:nth-child(1) { left: 0; top: 10px; }
+    .cover:nth-child(2) { left: 8px; top: 5px; background: linear-gradient(135deg, #846ad7, #f4d27d); }
+    .cover:nth-child(3) { left: 15px; top: 0; background: linear-gradient(135deg, #4c85b8, #b9e3ff); }
+    .name { font-size: 18px; font-weight: 800; line-height: 1.25; }
+    .meta { margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .pill {
+      align-self: start;
+      background: rgba(169, 213, 255, .11);
+      color: var(--accent);
+      border-radius: 999px;
+      padding: 7px 10px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .meter {
+      margin-top: 12px;
+      height: 4px;
+      background: rgba(169, 213, 255, .12);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .meter i {
+      display: block;
+      width: 52%;
+      height: 100%;
+      background: var(--accent);
+      border-radius: 999px;
+    }
+    .nav {
+      position: absolute;
+      left: 22px;
+      right: 22px;
+      bottom: 24px;
+      height: 68px;
+      border-radius: 34px;
+      background: rgba(23, 40, 56, .82);
+      backdrop-filter: blur(22px);
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .nav b {
+      color: var(--text);
+      background: rgba(169, 213, 255, .22);
+      padding: 12px 24px;
+      border-radius: 999px;
+    }
+    .overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(4, 9, 14, .46);
+      backdrop-filter: blur(10px);
+      padding: 54px 18px 28px;
+    }
+    .expanded {
+      height: 620px;
+      border-radius: 32px;
+      background: rgba(23, 40, 56, .92);
+      padding: 18px;
+      border: 1px solid rgba(169, 213, 255, .1);
+      box-shadow: 0 28px 80px rgba(0,0,0,.48);
+    }
+    .expanded-title {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+    .mini-cover {
+      width: 54px;
+      height: 74px;
+      border-radius: 11px;
+      background: linear-gradient(135deg, #70a7d8, #f4b0cf);
+    }
+    .masonry {
+      columns: 2;
+      column-gap: 12px;
+    }
+    .book-tile {
+      break-inside: avoid;
+      margin-bottom: 12px;
+      background: rgba(255,255,255,.045);
+      border-radius: 18px;
+      padding: 10px;
+    }
+    .book-cover {
+      height: var(--h);
+      border-radius: 12px;
+      background: linear-gradient(135deg, #4d8ac0, #f1c2d8);
+      margin-bottom: 8px;
+    }
+    .book-tile strong {
+      display: block;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+    .book-tile small { color: var(--muted); }
+    .motion-note {
+      position: absolute;
+      left: 18px;
+      right: 18px;
+      bottom: 104px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+      background: rgba(23, 40, 56, .72);
+      border-radius: 18px;
+      padding: 12px;
+    }
+  </style>
+</head>
+<body>
+  <h1>书架分块显示概念</h1>
+  <p>点击分块后用 Hero 一镜到底：卡片放大到屏幕中央，封面堆栈过渡到标题区，内部书籍用瀑布流分块。</p>
+  <div class="grid">
+    <div>
+      <h2>方案 A：紧凑系列块</h2>
+      <div class="phone">
+        <div class="screen">
+          <div class="title">书架</div>
+          <div class="tabs"><span>全部</span><span>国轻</span></div>
+          <div class="section">▱ 全部（7）</div>
+          <div class="block">
+            <div class="block-head">
+              <div class="cover-stack"><div class="cover"></div><div class="cover"></div><div class="cover"></div></div>
+              <div><div class="name">败北女角太多了！</div><div class="meta">8 本 · 112 章<br>系列进度 51%</div></div>
+              <div class="pill">8 本⌄</div>
+            </div>
+            <div class="meter"><i></i></div>
+          </div>
+          <div class="block"><div class="block-head"><div class="cover-stack"><div class="cover"></div></div><div><div class="name">凡人修仙传合集</div><div class="meta">1 本 · 4044 章<br>1065万字</div></div><div class="pill">1 本⌄</div></div><div class="meter"><i style="width:3%"></i></div></div>
+          <div class="block"><div class="block-head"><div class="cover-stack"><div class="cover"></div><div class="cover"></div></div><div><div class="name">今天依旧是人设未崩的牧师小姐</div><div class="meta">2 本 · 442 章<br>系列进度 20%</div></div><div class="pill">2 本⌄</div></div><div class="meter"><i style="width:20%"></i></div></div>
+          <div class="nav"><span>阅读中</span><b>书架</b><span>统计</span><span>设置</span></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <h2>方案 B：居中展开</h2>
+      <div class="phone">
+        <div class="screen">
+          <div class="title">书架</div>
+          <div class="tabs"><span>全部</span><span>国轻</span></div>
+          <div class="block" style="transform: scale(.88); opacity:.35"><div class="block-head"><div class="cover-stack"><div class="cover"></div><div class="cover"></div><div class="cover"></div></div><div><div class="name">败北女角太多了！</div><div class="meta">8 本 · 112 章</div></div><div class="pill">8 本</div></div></div>
+          <div class="overlay">
+            <div class="expanded">
+              <div class="expanded-title">
+                <div class="mini-cover"></div>
+                <div><div class="name">败北女角太多了！</div><div class="meta">8 本 · 按卷数排序 · 系列进度 51%</div></div>
+              </div>
+              <div class="masonry">
+                <div class="book-tile"><div class="book-cover" style="--h:112px"></div><strong>第 1 卷</strong><small>8.3万字 · 51%</small></div>
+                <div class="book-tile"><div class="book-cover" style="--h:136px"></div><strong>第 2 卷</strong><small>未读</small></div>
+                <div class="book-tile"><div class="book-cover" style="--h:128px"></div><strong>第 3 卷</strong><small>未读</small></div>
+                <div class="book-tile"><div class="book-cover" style="--h:104px"></div><strong>第 4 卷</strong><small>未读</small></div>
+                <div class="book-tile"><div class="book-cover" style="--h:132px"></div><strong>第 5 卷</strong><small>未读</small></div>
+                <div class="book-tile"><div class="book-cover" style="--h:118px"></div><strong>第 6 卷</strong><small>未读</small></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <h2>方案 C：过渡镜头</h2>
+      <div class="phone">
+        <div class="screen">
+          <div class="title">书架</div>
+          <div class="tabs"><span>全部</span><span>国轻</span></div>
+          <div class="block" style="position:absolute; left:18px; right:18px; top:260px; transform: scale(1.08); box-shadow:0 22px 70px rgba(0,0,0,.38)">
+            <div class="block-head">
+              <div class="cover-stack"><div class="cover"></div><div class="cover"></div><div class="cover"></div></div>
+              <div><div class="name">败北女角太多了！</div><div class="meta">卡片正在向中央展开</div></div>
+              <div class="pill">Hero</div>
+            </div>
+            <div class="meter"><i></i></div>
+          </div>
+          <div class="motion-note">
+            动画建议：点击后背景列表淡出并轻微缩放；被点卡片用 Hero 过渡到中央；卡片圆角从 24 过渡到 32；封面堆栈移动到标题区；书籍瀑布流延迟 80ms 淡入上移。
+          </div>
+          <div class="nav"><span>阅读中</span><b>书架</b><span>统计</span><span>设置</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -54,3 +54,18 @@ app.*.map.json
 /reader-*.png
 /squartor_*.png
 /squartor-*.png
+
+# Local scratch / extraction tooling (not part of the build)
+/extract.py
+/decode_unicode.py
+/orig_settings*.txt
+/extracted_settings*.dart
+/transcript_context*.txt
+/patch.diff
+*.patch
+/.claude/
+
+# Stray Android Gradle reports (regenerated each build)
+/android/build/
+/android/.gradle/
+

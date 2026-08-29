@@ -17,9 +17,7 @@ mixin ReaderNavigationMixin<T extends ReaderScreenWidget>
       return;
     }
     final clamped = progress.clamp(0.0, 1.0).toDouble();
-    final targetIndex = clamped >= .999
-        ? chapterCount - 1
-        : (clamped * chapterCount).floor().clamp(0, chapterCount - 1);
+    final targetIndex = chapterIndexForOverallProgressValue(clamped);
     if (targetIndex == chapterIndex) {
       return;
     }

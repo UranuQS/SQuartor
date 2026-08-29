@@ -164,13 +164,47 @@ mixin ReaderOverlayMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
 
   @override
   void showToc() {
-    HapticFeedback.selectionClick();
+    if (overlay == ReaderOverlay.toc && mounted) {
+      animateTocBookmarkModeTo(false);
+      return;
+    }
+    tocBookmarkModePosition = null;
+    tocBookmarkLastHapticTick = null;
+    tocShowsBookmarks = false;
+    showSideOverlay(ReaderOverlay.toc);
+  }
+
+  @override
+  void showBookmarks() {
+    if (overlay == ReaderOverlay.toc && mounted) {
+      animateTocBookmarkModeTo(true);
+      return;
+    }
+    tocBookmarkModePosition = null;
+    tocBookmarkLastHapticTick = null;
+    tocShowsBookmarks = true;
+    showSideOverlay(ReaderOverlay.toc);
+  }
+
+  @override
+  void toggleTocBookmarkMode() {
+    final next = tocBookmarkModePosition != null
+        ? tocBookmarkModePosition! < .5
+        : !tocShowsBookmarks;
+    if (overlay == ReaderOverlay.toc && mounted) {
+      animateTocBookmarkModeTo(next);
+      return;
+    }
+    tocBookmarkModePosition = null;
+    tocBookmarkLastHapticTick = null;
+    tocShowsBookmarks = next;
     showSideOverlay(ReaderOverlay.toc);
   }
 
   @override
   void showSettings() {
-    HapticFeedback.selectionClick();
+    tocBookmarkModePosition = null;
+    tocBookmarkLastHapticTick = null;
     showSideOverlay(ReaderOverlay.settings);
   }
 
@@ -229,6 +263,7 @@ mixin ReaderOverlayMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
         chapterIndex: chapterIndex,
         page: safePage,
         pageCount: safePages,
+        displayProgress: overallProgress,
       ),
     );
   }
@@ -271,6 +306,10 @@ mixin ReaderOverlayMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
       return;
     }
     final serial = ++overlayTransitionSerial;
+    if (sideOverlayDismissing || chromeReturningFromSide) {
+      unawaited(hideInterruptedSideOverlayAnimated(serial));
+      return;
+    }
     unawaited(toggleChromeAnimated(serial));
   }
 
@@ -289,7 +328,6 @@ mixin ReaderOverlayMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
     if (!mounted || !isSideOverlay(overlay)) {
       return;
     }
-    HapticFeedback.selectionClick();
     final serial = ++overlayTransitionSerial;
     unawaited(returnToChromeFromSideOverlayAnimated(serial));
   }
@@ -297,6 +335,44 @@ mixin ReaderOverlayMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
   @override
   AnimationController sideAnimation(ReaderOverlay overlay) {
     return overlay == ReaderOverlay.settings ? settingsAnimation : tocAnimation;
+  }
+
+  Future<void> hideInterruptedSideOverlayAnimated(int serial) async {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      overlay = ReaderOverlay.hidden;
+      sideOverlayDismissing = true;
+      chromeReturningFromSide = false;
+    });
+
+    Future<void> reverseIfVisible(AnimationController controller) async {
+      if (controller.value <= 0.001) {
+        controller.value = 0;
+        return;
+      }
+      await controller.reverse();
+    }
+
+    await Future.wait([
+      reverseIfVisible(tocAnimation),
+      reverseIfVisible(settingsAnimation),
+      reverseIfVisible(chromeAnimation),
+    ]);
+    if (!mounted || serial != overlayTransitionSerial) {
+      return;
+    }
+    clearReaderSnapshot(notify: false);
+    setState(() {
+      overlay = ReaderOverlay.hidden;
+      sideOverlayDismissing = false;
+      chromeReturningFromSide = false;
+      tocAnimation.value = 0;
+      settingsAnimation.value = 0;
+      chromeAnimation.value = 0;
+    });
+    await showFooter(fromZero: footerAnimation.value <= 0.001);
   }
 
   @override
@@ -370,7 +446,10 @@ mixin ReaderOverlayMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
     final current = overlay;
     await hideFooter();
     if (isSideOverlay(current)) {
-      setState(() => overlay = ReaderOverlay.hidden);
+      setState(() {
+        overlay = ReaderOverlay.hidden;
+        chromeReturningFromSide = false;
+      });
       await sideAnimation(current).reverse();
     }
     if (!mounted || serial != overlayTransitionSerial) {
@@ -401,6 +480,7 @@ mixin ReaderOverlayMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
     setState(() {
       overlay = ReaderOverlay.chrome;
       sideOverlayDismissing = false;
+      chromeReturningFromSide = true;
     });
     await chromeAnimation.forward();
     if (!mounted || serial != overlayTransitionSerial) {
@@ -422,6 +502,7 @@ mixin ReaderOverlayMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
         setState(() {
           overlay = ReaderOverlay.hidden;
           sideOverlayDismissing = false;
+          chromeReturningFromSide = false;
         });
       }
     }
@@ -430,8 +511,10 @@ mixin ReaderOverlayMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
     }
     if (isSideOverlay(current)) {
       clearReaderSnapshot();
-      return;
+      await showFooter(fromZero: true);
     }
-    await showFooter(fromZero: true);
+    if (!isSideOverlay(current)) {
+      await showFooter(fromZero: true);
+    }
   }
 }

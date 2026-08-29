@@ -19,6 +19,8 @@ class ReadingStyle {
     this.readingFlow = ReadingFlowMode.paged,
     this.reverseTapPageTurn = false,
     this.firstLineIndent = true,
+    this.dimJapaneseText = false,
+    this.pageTurnAnimation = false,
     this.fontName,
     this.fontPath,
     this.appFontName,
@@ -38,6 +40,8 @@ class ReadingStyle {
   final ReadingFlowMode readingFlow;
   final bool reverseTapPageTurn;
   final bool firstLineIndent;
+  final bool dimJapaneseText;
+  final bool pageTurnAnimation;
   final String? fontName;
   final String? fontPath;
   final String? appFontName;
@@ -58,7 +62,15 @@ class ReadingStyle {
       ? themeSeeds[appTheme]!.label
       : '自定义 ${themeHex(themeSeedColor)}';
 
-  AppPalette resolvePalette(Brightness brightness) {
+  AppPalette resolvePalette(Brightness brightness, {Color? dynamicSeedColor}) {
+    if (customThemeColorValue == null && appTheme == AppThemeId.wallpaper) {
+      return buildPaletteFromSeed(
+        seed: dynamicSeedColor ?? themeSeeds[AppThemeId.wallpaper]!.color,
+        brightness: brightness,
+        label: themeSeeds[AppThemeId.wallpaper]!.label,
+        id: AppThemeId.wallpaper,
+      );
+    }
     if (brightness == Brightness.dark && customThemeColorValue == null) {
       return appPalettes[appTheme]!;
     }
@@ -84,6 +96,8 @@ class ReadingStyle {
     ReadingFlowMode? readingFlow,
     bool? reverseTapPageTurn,
     bool? firstLineIndent,
+    bool? dimJapaneseText,
+    bool? pageTurnAnimation,
     String? fontName,
     String? fontPath,
     String? appFontName,
@@ -108,6 +122,8 @@ class ReadingStyle {
       readingFlow: readingFlow ?? this.readingFlow,
       reverseTapPageTurn: reverseTapPageTurn ?? this.reverseTapPageTurn,
       firstLineIndent: firstLineIndent ?? this.firstLineIndent,
+      dimJapaneseText: dimJapaneseText ?? this.dimJapaneseText,
+      pageTurnAnimation: pageTurnAnimation ?? this.pageTurnAnimation,
       fontName: clearFont ? null : fontName ?? this.fontName,
       fontPath: clearFont ? null : fontPath ?? this.fontPath,
       appFontName: clearAppFont ? null : appFontName ?? this.appFontName,
@@ -129,6 +145,8 @@ class ReadingStyle {
     'readingFlow': readingFlow.name,
     'reverseTapPageTurn': reverseTapPageTurn,
     'firstLineIndent': firstLineIndent,
+    'dimJapaneseText': dimJapaneseText,
+    'pageTurnAnimation': pageTurnAnimation,
     'fontName': fontName,
     'fontPath': fontPath,
     'appFontName': appFontName,
@@ -182,6 +200,8 @@ class ReadingStyle {
       ),
       reverseTapPageTurn: json['reverseTapPageTurn'] as bool? ?? false,
       firstLineIndent: json['firstLineIndent'] as bool? ?? true,
+      dimJapaneseText: json['dimJapaneseText'] as bool? ?? false,
+      pageTurnAnimation: json['pageTurnAnimation'] as bool? ?? false,
       fontName: json['fontName'] as String?,
       fontPath: json['fontPath'] as String?,
       appFontName: json['appFontName'] as String?,

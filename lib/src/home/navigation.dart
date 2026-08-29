@@ -11,13 +11,17 @@ class M3Navigation extends StatelessWidget {
     required this.index,
     required this.palette,
     required this.hidden,
+    required this.bottomPadding,
     required this.onChanged,
   });
 
   final int index;
   final AppPalette palette;
   final bool hidden;
+  final double bottomPadding;
   final ValueChanged<int> onChanged;
+
+  static const barHeight = 82.0;
 
   @override
   Widget build(BuildContext context) {
@@ -45,92 +49,108 @@ class M3Navigation extends StatelessWidget {
       ),
     ];
     final shadowColor = isLight
-        ? palette.primary.withValues(alpha: .11)
-        : Colors.black.withValues(alpha: .28);
+        ? palette.primary.withValues(alpha: .16)
+        : Colors.black.withValues(alpha: .30);
+    final navColor = isLight
+        ? Color.lerp(palette.surface, Colors.white, .42)!.withValues(alpha: .58)
+        : Color.lerp(
+            palette.surface,
+            Colors.black,
+            .02,
+          )!.withValues(alpha: .52);
+    final topSheen = isLight
+        ? Colors.white.withValues(alpha: .48)
+        : Colors.white.withValues(alpha: .16);
     return IgnorePointer(
       ignoring: hidden,
       child: AnimatedSlide(
         offset: hidden ? const Offset(0, 1.45) : Offset.zero,
         duration: const Duration(milliseconds: 260),
         curve: Curves.easeInOutCubic,
-        child: AnimatedOpacity(
-          opacity: hidden ? 0 : 1,
-          duration: const Duration(milliseconds: 170),
-          curve: Curves.easeOutCubic,
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 720),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(999),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                  child: Material(
-                    color: palette.surface.withValues(
-                      alpha: isLight ? .70 : .76,
-                    ),
-                    elevation: isLight ? 1 : 2,
-                    shadowColor: shadowColor,
-                    borderRadius: BorderRadius.circular(999),
-                    clipBehavior: Clip.antiAlias,
-                    child: SizedBox(
-                      height: 82,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 8,
-                        ),
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final segment =
-                                constraints.maxWidth / destinations.length;
-                            final indicatorColor = isLight
-                                ? palette.primarySoft.withValues(alpha: .24)
-                                : Color.lerp(
-                                    palette.cardAlt,
-                                    palette.primarySoft,
-                                    .10,
-                                  )!;
-                            return Stack(
-                              children: [
-                                AnimatedPositioned(
-                                  duration: const Duration(milliseconds: 360),
-                                  curve: Curves.easeOutBack,
-                                  left: segment * index + 3,
-                                  top: 4,
-                                  bottom: 4,
-                                  width: segment - 6,
-                                  child: DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      color: indicatorColor,
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                  ),
-                                ),
-                                Row(
-                                  children: [
-                                    for (
-                                      var i = 0;
-                                      i < destinations.length;
-                                      i++
-                                    )
-                                      Expanded(
-                                        child: M3NavigationItem(
-                                          destination: destinations[i],
-                                          selected: i == index,
-                                          palette: palette,
-                                          isLight: isLight,
-                                          onTap: () => onChanged(i),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ],
-                            );
-                          },
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+            child: Material(
+              color: navColor,
+              elevation: isLight ? 4 : 3,
+              shadowColor: shadowColor,
+              shape: const StadiumBorder(),
+              clipBehavior: Clip.antiAlias,
+              child: SizedBox(
+                height: barHeight + bottomPadding,
+                child: Stack(
+                  children: [
+                    Positioned(
+                      left: 28,
+                      right: 28,
+                      top: 0,
+                      height: 1.5,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.transparent,
+                              topSheen,
+                              Colors.transparent,
+                            ],
+                            stops: const [0, .5, 1],
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 8,
+                      ),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final segment =
+                              constraints.maxWidth / destinations.length;
+                          final indicatorColor = isLight
+                              ? palette.primarySoft.withValues(alpha: .40)
+                              : Color.lerp(
+                                  palette.cardAlt,
+                                  palette.primarySoft,
+                                  .28,
+                                )!.withValues(alpha: .58);
+                          return Stack(
+                            children: [
+                              AnimatedPositioned(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeOutCubic,
+                                left: segment * index + 3,
+                                top: 4,
+                                bottom: 4,
+                                width: segment - 6,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: indicatorColor,
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                ),
+                              ),
+                              Row(
+                                children: [
+                                  for (var i = 0; i < destinations.length; i++)
+                                    Expanded(
+                                      child: M3NavigationItem(
+                                        destination: destinations[i],
+                                        selected: i == index,
+                                        palette: palette,
+                                        isLight: isLight,
+                                        onTap: () => onChanged(i),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -171,8 +191,13 @@ class M3NavigationItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final selectedColor = isLight ? palette.primary : palette.primarySoft;
-    final foreground = selected ? selectedColor : palette.muted;
+    final selectedColor = isLight
+        ? Color.lerp(palette.primary, palette.text, .18)!
+        : palette.primarySoft;
+    final inactiveColor = isLight
+        ? Color.lerp(palette.muted, palette.text, .34)!
+        : Color.lerp(palette.muted, palette.text, .18)!;
+    final foreground = selected ? selectedColor : inactiveColor;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 3),

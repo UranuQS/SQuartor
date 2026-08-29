@@ -2,7 +2,6 @@ import 'dart:math' as math;
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../typography.dart';
 import 'reader_glass_palette.dart';
@@ -45,10 +44,7 @@ class ReaderDockActionPill extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         overlayColor: WidgetStatePropertyAll(glass.text.withValues(alpha: .10)),
-        onTap: () {
-          HapticFeedback.selectionClick();
-          onPressed();
-        },
+        onTap: onPressed,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
           child: showContent
@@ -211,7 +207,7 @@ class ReaderProgressBatteryPill extends StatefulWidget {
     required this.chapterOpacity,
     required this.rulerVisible,
     required this.onRulerVisibilityChanged,
-    required this.onSeek,
+    required this.onChapterSeek,
     required this.onScrubStart,
     required this.onPressed,
   });
@@ -223,7 +219,7 @@ class ReaderProgressBatteryPill extends StatefulWidget {
   final double chapterOpacity;
   final bool rulerVisible;
   final ValueChanged<bool> onRulerVisibilityChanged;
-  final ValueChanged<double> onSeek;
+  final ValueChanged<int> onChapterSeek;
   final VoidCallback onScrubStart;
   final VoidCallback onPressed;
 
@@ -234,15 +230,13 @@ class ReaderProgressBatteryPill extends StatefulWidget {
 
 class _ReaderProgressBatteryPillState extends State<ReaderProgressBatteryPill>
     with SingleTickerProviderStateMixin {
-  late double _displayProgress = widget.progress.clamp(0.0, 1.0).toDouble();
+  late double _overviewProgress = widget.progress.clamp(0.0, 1.0).toDouble();
   late final AnimationController _settleController;
   Animation<double>? _settleAnimation;
   var _dragging = false;
-  double? _interactiveProgress;
-  double? _pendingSeekProgress;
+  double? _rulerProgress;
+  int? _pendingSeekChapter;
   var _pendingSeek = false;
-  int? _lastHapticTick;
-  DateTime _lastHapticAt = DateTime.fromMillisecondsSinceEpoch(0);
   Timer? _scrubberHideTimer;
 
   @override
@@ -254,21 +248,23 @@ class _ReaderProgressBatteryPillState extends State<ReaderProgressBatteryPill>
         if (animation == null) {
           return;
         }
-        setState(() => _displayProgress = animation.value);
+        setState(() => _rulerProgress = animation.value);
       })
       ..addStatusListener((status) {
         if (status != AnimationStatus.completed) {
           return;
         }
-        final target = _pendingSeekProgress;
+        final targetChapter = _pendingSeekChapter;
         final shouldSeek = _pendingSeek;
         _settleAnimation = null;
-        _pendingSeekProgress = null;
+        _pendingSeekChapter = null;
         _pendingSeek = false;
         _dragging = false;
-        _interactiveProgress = null;
-        if (shouldSeek && target != null) {
-          widget.onSeek(target);
+        if (!shouldSeek) {
+          _rulerProgress = null;
+        }
+        if (shouldSeek && targetChapter != null) {
+          widget.onChapterSeek(targetChapter);
         }
         _scheduleScrubberHide();
       });
@@ -281,8 +277,16 @@ class _ReaderProgressBatteryPillState extends State<ReaderProgressBatteryPill>
       return;
     }
     final target = widget.progress.clamp(0.0, 1.0).toDouble();
-    if ((target - _displayProgress).abs() > .0001) {
-      setState(() => _displayProgress = target);
+    final reachedRulerChapter =
+        _rulerProgress != null &&
+        oldWidget.currentChapter != widget.currentChapter;
+    if ((target - _overviewProgress).abs() > .0001 || reachedRulerChapter) {
+      setState(() {
+        _overviewProgress = target;
+        if (reachedRulerChapter) {
+          _rulerProgress = null;
+        }
+      });
     }
   }
 
@@ -336,23 +340,9 @@ class _ReaderProgressBatteryPillState extends State<ReaderProgressBatteryPill>
 
   void _setInteractiveProgress(double value) {
     final next = value.clamp(0.0, 1.0).toDouble();
-    _maybeTickHaptic(next);
     setState(() {
-      _interactiveProgress = next;
-      _displayProgress = next;
+      _rulerProgress = next;
     });
-  }
-
-  void _maybeTickHaptic(double progress) {
-    final tick = _chapterPositionForProgress(progress).round();
-    final now = DateTime.now();
-    if (tick == _lastHapticTick ||
-        now.difference(_lastHapticAt).inMilliseconds < 36) {
-      return;
-    }
-    _lastHapticTick = tick;
-    _lastHapticAt = now;
-    HapticFeedback.selectionClick();
   }
 
   void _showScrubber() {
@@ -377,16 +367,15 @@ class _ReaderProgressBatteryPillState extends State<ReaderProgressBatteryPill>
     _showScrubber();
     _settleController.stop();
     _settleAnimation = null;
-    _pendingSeekProgress = null;
+    _pendingSeekChapter = null;
     _pendingSeek = false;
     _dragging = true;
-    _interactiveProgress = _displayProgress;
-    _lastHapticTick = _chapterPositionForProgress(_displayProgress).round();
-    HapticFeedback.selectionClick();
+    _rulerProgress = _progressForChapter(widget.currentChapter);
   }
 
   void _updateDrag(double delta, double width) {
-    final current = _interactiveProgress ?? _displayProgress;
+    final current =
+        _rulerProgress ?? _progressForChapter(widget.currentChapter);
     final currentPosition = _chapterPositionForProgress(current);
     final nextPosition = (currentPosition - delta / _rulerTickSpacing()).clamp(
       0.0,
@@ -396,7 +385,8 @@ class _ReaderProgressBatteryPillState extends State<ReaderProgressBatteryPill>
   }
 
   void _endDrag(DragEndDetails details, double width) {
-    final current = _interactiveProgress ?? _displayProgress;
+    final current =
+        _rulerProgress ?? _progressForChapter(widget.currentChapter);
     final currentPosition = _chapterPositionForProgress(current);
     final velocityChapters =
         details.velocity.pixelsPerSecond.dx / _rulerTickSpacing();
@@ -408,28 +398,30 @@ class _ReaderProgressBatteryPillState extends State<ReaderProgressBatteryPill>
         .round()
         .clamp(0, math.max(0, widget.chapterCount - 1))
         .toInt();
-    final currentChapter = widget.currentChapter.clamp(
-      0,
-      math.max(0, widget.chapterCount - 1),
-    );
+    final currentChapter = widget.currentChapter
+        .clamp(0, math.max(0, widget.chapterCount - 1))
+        .toInt();
     final shouldSeek = targetChapter != currentChapter;
     final targetProgress = shouldSeek
         ? _progressForChapter(targetChapter)
-        : widget.progress.clamp(0.0, 1.0).toDouble();
+        : _progressForChapter(currentChapter);
     _animateToProgress(
       targetProgress,
       shouldSeek: shouldSeek,
+      targetChapter: shouldSeek ? targetChapter : null,
       from: current,
       distance: (targetProgress - current).abs(),
     );
   }
 
   void _cancelDrag() {
-    final current = _interactiveProgress ?? _displayProgress;
-    final target = widget.progress.clamp(0.0, 1.0).toDouble();
+    final current =
+        _rulerProgress ?? _progressForChapter(widget.currentChapter);
+    final target = _progressForChapter(widget.currentChapter);
     _animateToProgress(
       target,
       shouldSeek: false,
+      targetChapter: null,
       from: current,
       distance: (target - current).abs(),
     );
@@ -438,10 +430,11 @@ class _ReaderProgressBatteryPillState extends State<ReaderProgressBatteryPill>
   void _animateToProgress(
     double target, {
     required bool shouldSeek,
+    required int? targetChapter,
     required double from,
     required double distance,
   }) {
-    _pendingSeekProgress = target;
+    _pendingSeekChapter = targetChapter;
     _pendingSeek = shouldSeek;
     _settleAnimation = Tween<double>(begin: from, end: target).animate(
       CurvedAnimation(parent: _settleController, curve: Curves.easeOutCubic),
@@ -456,13 +449,13 @@ class _ReaderProgressBatteryPillState extends State<ReaderProgressBatteryPill>
   @override
   Widget build(BuildContext context) {
     return TweenAnimationBuilder<double>(
-      tween: Tween<double>(end: _displayProgress),
+      tween: Tween<double>(end: _overviewProgress),
       duration: _dragging || _settleController.isAnimating
           ? Duration.zero
           : const Duration(milliseconds: 360),
       curve: Curves.easeOutQuart,
       builder: (context, animatedProgress, _) {
-        final shownProgress = animatedProgress.clamp(0.0, 1.0).toDouble();
+        final overviewProgress = animatedProgress.clamp(0.0, 1.0).toDouble();
         return Material(
           color: widget.glass.pill,
           borderRadius: BorderRadius.circular(28),
@@ -475,12 +468,15 @@ class _ReaderProgressBatteryPillState extends State<ReaderProgressBatteryPill>
                   widget.rulerVisible ||
                   _dragging ||
                   _settleController.isAnimating;
+              final rulerProgress =
+                  (_rulerProgress ?? _progressForChapter(widget.currentChapter))
+                      .clamp(0.0, 1.0)
+                      .toDouble();
               final dragEnabled = chromeActive;
               return GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () {
                   if (!chromeActive) {
-                    HapticFeedback.selectionClick();
                     widget.onPressed();
                   }
                 },
@@ -500,7 +496,7 @@ class _ReaderProgressBatteryPillState extends State<ReaderProgressBatteryPill>
                       duration: const Duration(milliseconds: 160),
                       curve: Curves.easeOutCubic,
                       child: ReaderProgressOverview(
-                        progress: shownProgress,
+                        progress: overviewProgress,
                         glass: widget.glass,
                       ),
                     ),
@@ -510,7 +506,7 @@ class _ReaderProgressBatteryPillState extends State<ReaderProgressBatteryPill>
                       curve: Curves.easeOutCubic,
                       child: CustomPaint(
                         painter: ReaderProgressRulerPainter(
-                          progress: shownProgress,
+                          progress: rulerProgress,
                           majorTickColor: widget.glass.text.withValues(
                             alpha: widget.glass.dark ? .70 : .76,
                           ),

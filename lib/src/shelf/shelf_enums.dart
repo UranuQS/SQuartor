@@ -13,7 +13,11 @@ enum ShelfSortMode {
 
 enum BookMenuAction { edit, series, select }
 
-enum ShelfMenuAction { import, sort, create }
+enum BookBlockMenuAction { rename, delete, merge }
+
+enum BookBlockBookMenuAction { removeFromGroup, moveToGroup, edit }
+
+enum ShelfMenuAction { import, sort, create, delete }
 
 class ShelfBookBlock {
   const ShelfBookBlock({

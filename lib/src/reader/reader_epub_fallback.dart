@@ -1,10 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
+
+import '../typography.dart';
 
 // ---------------------------------------------------------------------------
 // EpubWebViewFallbackException
@@ -18,14 +21,26 @@ class EpubWebViewFallbackException implements Exception {
 // FullscreenImageViewer
 // ---------------------------------------------------------------------------
 
-class FullscreenImageViewer extends StatelessWidget {
+class FullscreenImageViewer extends StatefulWidget {
   const FullscreenImageViewer({super.key, required this.source});
 
   final String source;
 
   @override
+  State<FullscreenImageViewer> createState() => _FullscreenImageViewerState();
+}
+
+class _FullscreenImageViewerState extends State<FullscreenImageViewer> {
+  late final Widget _image;
+
+  @override
+  void initState() {
+    super.initState();
+    _image = readerImageForSource(widget.source);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final image = readerImageForSource(source);
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
@@ -34,11 +49,12 @@ class FullscreenImageViewer extends StatelessWidget {
             Positioned.fill(
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onLongPress: () => showReaderImageActions(context, source),
+                onLongPress: () =>
+                    showReaderImageActions(context, widget.source),
                 child: InteractiveViewer(
                   minScale: .8,
                   maxScale: 6,
-                  child: Center(child: image),
+                  child: Center(child: _image),
                 ),
               ),
             ),
@@ -57,6 +73,30 @@ class FullscreenImageViewer extends StatelessWidget {
   }
 }
 
+PageRouteBuilder<void> readerImageViewerRoute(String source) {
+  return PageRouteBuilder<void>(
+    opaque: true,
+    transitionDuration: const Duration(milliseconds: 280),
+    reverseTransitionDuration: const Duration(milliseconds: 180),
+    pageBuilder: (context, animation, secondaryAnimation) =>
+        FullscreenImageViewer(source: source),
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      final curved = CurvedAnimation(
+        parent: animation,
+        curve: Curves.easeOutBack,
+        reverseCurve: Curves.easeInCubic,
+      );
+      return FadeTransition(
+        opacity: animation.drive(CurveTween(curve: Curves.easeOutCubic)),
+        child: ScaleTransition(
+          scale: Tween<double>(begin: .92, end: 1).animate(curved),
+          child: child,
+        ),
+      );
+    },
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Image action helpers
 // ---------------------------------------------------------------------------
@@ -66,56 +106,77 @@ Future<void> showReaderImageActions(BuildContext context, String source) async {
   await showModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,
+    barrierColor: Colors.black.withValues(alpha: .48),
     builder: (sheetContext) {
       final colors = Theme.of(sheetContext).colorScheme;
       return SafeArea(
         top: false,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: colors.surface,
-              borderRadius: BorderRadius.circular(28),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: .28),
-                  blurRadius: 24,
-                  offset: const Offset(0, 10),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: 1),
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOutBack,
+            builder: (context, value, child) {
+              final opacity = value.clamp(0.0, 1.0).toDouble();
+              final scale = .92 + opacity * .08;
+              final dy = 28 * (1 - opacity);
+              return Opacity(
+                opacity: opacity,
+                child: Transform.translate(
+                  offset: Offset(0, dy),
+                  child: Transform.scale(
+                    scale: scale,
+                    alignment: Alignment.bottomCenter,
+                    child: child,
+                  ),
                 ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 44,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: colors.outlineVariant,
-                      borderRadius: BorderRadius.circular(999),
+              );
+            },
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(30),
+              child: BackdropFilter(
+                filter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: colors.surface.withValues(alpha: .62),
+                    borderRadius: BorderRadius.circular(30),
+                    border: Border.all(
+                      color: colors.onSurface.withValues(alpha: .08),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(18),
-                        ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: .22),
+                        blurRadius: 28,
+                        offset: const Offset(0, 14),
                       ),
-                      onPressed: () {
-                        Navigator.pop(sheetContext);
-                        saveReaderImage(context, source);
-                      },
-                      icon: const Icon(Icons.save_alt_rounded),
-                      label: const Text('\u4fdd\u5b58\u56fe\u7247'),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: colors.onSurface.withValues(alpha: .20),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _ImageSaveGlassButton(
+                          colors: colors,
+                          onPressed: () {
+                            Navigator.pop(sheetContext);
+                            saveReaderImage(context, source);
+                          },
+                        ),
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
             ),
           ),
@@ -123,6 +184,62 @@ Future<void> showReaderImageActions(BuildContext context, String source) async {
       );
     },
   );
+}
+
+class _ImageSaveGlassButton extends StatelessWidget {
+  const _ImageSaveGlassButton({required this.colors, required this.onPressed});
+
+  final ColorScheme colors;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+        child: Material(
+          color: colors.primary.withValues(alpha: .30),
+          child: InkWell(
+            onTap: onPressed,
+            splashColor: colors.primary.withValues(alpha: .14),
+            highlightColor: colors.primary.withValues(alpha: .10),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 15),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(
+                  color: colors.onPrimary.withValues(alpha: .18),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.save_alt_rounded,
+                    color: colors.onPrimary.withValues(alpha: .92),
+                    size: 22,
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    '保存图片',
+                    style: TextStyle(
+                      color: colors.onPrimary.withValues(alpha: .94),
+                      fontSize: 17,
+                      fontWeight: AppTextWeight.medium,
+                      height: 1.1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 Widget readerImageForSource(String source) {

@@ -9,6 +9,7 @@ class ReaderChapter {
     this.endAnchor,
     this.tocDepth = 0,
     this.cachedPageCount,
+    this.wordCount,
   });
 
   final String title;
@@ -18,9 +19,11 @@ class ReaderChapter {
   final String? endAnchor;
   final int tocDepth;
   final int? cachedPageCount;
+  final int? wordCount;
 
   ReaderChapter copyWith({
     int? cachedPageCount,
+    int? wordCount,
     bool clearCachedPageCount = false,
   }) {
     return ReaderChapter(
@@ -33,6 +36,7 @@ class ReaderChapter {
       cachedPageCount: clearCachedPageCount
           ? null
           : cachedPageCount ?? this.cachedPageCount,
+      wordCount: wordCount ?? this.wordCount,
     );
   }
 
@@ -44,6 +48,7 @@ class ReaderChapter {
     'endAnchor': endAnchor,
     'tocDepth': tocDepth,
     'cachedPageCount': cachedPageCount,
+    'wordCount': wordCount,
   };
 
   factory ReaderChapter.fromJson(Map<String, Object?> json) {
@@ -55,6 +60,51 @@ class ReaderChapter {
       endAnchor: json['endAnchor'] as String?,
       tocDepth: json['tocDepth'] as int? ?? 0,
       cachedPageCount: json['cachedPageCount'] as int?,
+      wordCount: json['wordCount'] as int?,
+    );
+  }
+}
+
+class BookBookmark {
+  const BookBookmark({
+    required this.id,
+    required this.chapterIndex,
+    required this.page,
+    required this.pageCount,
+    required this.progress,
+    required this.createdAt,
+    required this.snippet,
+  });
+
+  final String id;
+  final int chapterIndex;
+  final int page;
+  final int pageCount;
+  final double progress;
+  final DateTime createdAt;
+  final String snippet;
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'chapterIndex': chapterIndex,
+    'page': page,
+    'pageCount': pageCount,
+    'progress': progress,
+    'createdAt': createdAt.toIso8601String(),
+    'snippet': snippet,
+  };
+
+  factory BookBookmark.fromJson(Map<String, Object?> json) {
+    return BookBookmark(
+      id: json['id'] as String? ?? '',
+      chapterIndex: json['chapterIndex'] as int? ?? 0,
+      page: json['page'] as int? ?? 0,
+      pageCount: json['pageCount'] as int? ?? 1,
+      progress: (json['progress'] as num?)?.toDouble() ?? 0,
+      createdAt:
+          DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+          DateTime.now(),
+      snippet: json['snippet'] as String? ?? '',
     );
   }
 }
@@ -78,6 +128,8 @@ class BookEntry {
     this.shelfName,
     this.wordCount,
     this.seriesOverride,
+    this.seriesOrder,
+    this.bookmarks = const [],
   });
 
   final String id;
@@ -97,6 +149,8 @@ class BookEntry {
   final String? shelfName;
   final int? wordCount;
   final String? seriesOverride;
+  final int? seriesOrder;
+  final List<BookBookmark> bookmarks;
 
   String get formatLabel => format == BookFormat.epub ? 'EPUB' : 'TXT';
 
@@ -121,8 +175,11 @@ class BookEntry {
     String? shelfName,
     int? wordCount,
     String? seriesOverride,
+    int? seriesOrder,
+    List<BookBookmark>? bookmarks,
     bool clearShelf = false,
     bool clearSeriesOverride = false,
+    bool clearSeriesOrder = false,
   }) {
     return BookEntry(
       id: id,
@@ -144,6 +201,8 @@ class BookEntry {
       seriesOverride: clearSeriesOverride
           ? null
           : seriesOverride ?? this.seriesOverride,
+      seriesOrder: clearSeriesOrder ? null : seriesOrder ?? this.seriesOrder,
+      bookmarks: bookmarks ?? this.bookmarks,
     );
   }
 
@@ -165,6 +224,8 @@ class BookEntry {
     'shelfName': shelfName,
     'wordCount': wordCount,
     'seriesOverride': seriesOverride,
+    'seriesOrder': seriesOrder,
+    'bookmarks': bookmarks.map((bookmark) => bookmark.toJson()).toList(),
   };
 
   factory BookEntry.fromJson(Map<String, Object?> json) {
@@ -201,6 +262,17 @@ class BookEntry {
       shelfName: json['shelfName'] as String?,
       wordCount: json['wordCount'] as int?,
       seriesOverride: json['seriesOverride'] as String?,
+      seriesOrder: json['seriesOrder'] as int?,
+      bookmarks: json['bookmarks'] is List
+          ? (json['bookmarks'] as List)
+                .whereType<Map>()
+                .map(
+                  (bookmark) =>
+                      BookBookmark.fromJson(bookmark.cast<String, Object?>()),
+                )
+                .where((bookmark) => bookmark.id.isNotEmpty)
+                .toList()
+          : const [],
     );
   }
 }

@@ -1,4 +1,6 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import '../app_state.dart';
@@ -23,6 +25,8 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   var _index = 1;
   var _shelfSelectionMode = false;
+  var _navigationHiddenByScroll = false;
+  var _scrollDeltaAccumulator = 0.0;
   late final List<Widget?> _pages;
 
   @override
@@ -45,6 +49,48 @@ class _HomeShellState extends State<HomeShell> {
     setState(() => _shelfSelectionMode = selectionMode);
   }
 
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (notification.metrics.axis != Axis.vertical) {
+      return false;
+    }
+    if (notification.metrics.pixels <= notification.metrics.minScrollExtent) {
+      _scrollDeltaAccumulator = 0;
+      _setNavigationHiddenByScroll(false);
+      return false;
+    }
+    if (notification is ScrollUpdateNotification) {
+      final delta = notification.scrollDelta;
+      if (delta == null || delta == 0) {
+        return false;
+      }
+      if (_scrollDeltaAccumulator.sign != delta.sign) {
+        _scrollDeltaAccumulator = 0;
+      }
+      _scrollDeltaAccumulator += delta;
+      final triggerDistance = kTouchSlop / 4;
+      if (_scrollDeltaAccumulator > triggerDistance) {
+        _scrollDeltaAccumulator = 0;
+        _setNavigationHiddenByScroll(true);
+      } else if (_scrollDeltaAccumulator < -triggerDistance) {
+        _scrollDeltaAccumulator = 0;
+        _setNavigationHiddenByScroll(false);
+      }
+      return false;
+    }
+    if (notification is UserScrollNotification &&
+        notification.direction == ScrollDirection.idle) {
+      _scrollDeltaAccumulator = 0;
+    }
+    return false;
+  }
+
+  void _setNavigationHiddenByScroll(bool hidden) {
+    if (_navigationHiddenByScroll == hidden || !mounted) {
+      return;
+    }
+    setState(() => _navigationHiddenByScroll = hidden);
+  }
+
   Widget _pageAt(int index) {
     return _pages[index] ??= switch (index) {
       0 => ReadingNowPage(state: widget.state),
@@ -62,37 +108,48 @@ class _HomeShellState extends State<HomeShell> {
     final navBottom = bottomInset < 8
         ? 14.0
         : (bottomInset * .65 + 10).clamp(24.0, 34.0).toDouble();
-    final hideNavigation = _index == 1 && _shelfSelectionMode;
+    final hideNavigation =
+        (_index == 1 && _shelfSelectionMode) || _navigationHiddenByScroll;
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: palette.background,
       body: SafeArea(
         bottom: false,
         child: Stack(
           children: [
-            LazyPageStack(
-              index: _index,
-              pages: _pages..[_index] = _pageAt(_index),
+            NotificationListener<ScrollNotification>(
+              onNotification: _handleScrollNotification,
+              child: LazyPageStack(
+                index: _index,
+                pages: _pages..[_index] = _pageAt(_index),
+                backgroundColor: palette.background,
+              ),
             ),
             ImportActivityOverlay(
               state: widget.state,
-              bottom: hideNavigation ? bottomInset + 18 : navBottom + 96,
+              hidden: hideNavigation,
+              bottom: navBottom + M3Navigation.barHeight + 16,
             ),
             ErrorOverlay(state: widget.state),
             Positioned(
-              left: 18,
-              right: 18,
+              left: 20,
+              right: 20,
               bottom: navBottom,
               child: M3Navigation(
                 index: _index,
                 palette: palette,
                 hidden: hideNavigation,
+                bottomPadding: 0,
                 onChanged: (index) {
                   HapticFeedback.selectionClick();
                   if (index == _index) {
                     return;
                   }
-                  setState(() => _index = index);
+                  setState(() {
+                    _index = index;
+                    _navigationHiddenByScroll = false;
+                  });
                 },
               ),
             ),

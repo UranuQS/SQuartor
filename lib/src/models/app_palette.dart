@@ -1,6 +1,6 @@
 import 'dart:ui';
 
-enum AppThemeId { wine, blue, green, brown, purple, black }
+enum AppThemeId { wallpaper, wine, blue, green, brown, purple, black }
 
 enum ReaderBackgroundId { theme, warm, black, paper, green }
 
@@ -50,6 +50,11 @@ class ThemeSeed {
 }
 
 const themeSeeds = <AppThemeId, ThemeSeed>{
+  AppThemeId.wallpaper: ThemeSeed(
+    id: AppThemeId.wallpaper,
+    label: '壁纸',
+    color: Color(0xFF2F6FA8),
+  ),
   AppThemeId.wine: ThemeSeed(
     id: AppThemeId.wine,
     label: '酒红',
@@ -99,6 +104,21 @@ class ReaderPalette {
 }
 
 const appPalettes = <AppThemeId, AppPalette>{
+  AppThemeId.wallpaper: AppPalette(
+    id: AppThemeId.wallpaper,
+    label: '壁纸',
+    background: Color(0xFF0A1017),
+    surface: Color(0xFF111B25),
+    card: Color(0xFF172838),
+    cardAlt: Color(0xFF1D3347),
+    line: Color(0xFF32495F),
+    primary: Color(0xFF2F6FA8),
+    primarySoft: Color(0xFFA9D5FF),
+    text: Color(0xFFEAF3FF),
+    muted: Color(0xFFB8C7D6),
+    subtle: Color(0xFF7890A4),
+    blueMuted: Color(0xFFA9D5FF),
+  ),
   AppThemeId.wine: AppPalette(
     id: AppThemeId.wine,
     label: '酒红',
@@ -209,7 +229,7 @@ const readerPalettes = <ReaderBackgroundId, ReaderPalette>{
   ReaderBackgroundId.black: ReaderPalette(
     id: ReaderBackgroundId.black,
     label: '黑色',
-    background: Color(0xFF050506),
+    background: Color(0xFF000000),
     text: Color(0xFFDEDEDE),
     muted: Color(0xFF9A9A9A),
   ),

@@ -22,137 +22,138 @@ class ReaderProgressOverview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = progress.clamp(0.0, 1.0).toDouble();
-    final percentText = (p * 100).round().toString();
     return RepaintBoundary(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final width = math.max(1.0, constraints.maxWidth);
-          final availableInnerWidth = math.max(1.0, width - 12);
-          final innerWidth = math.min(availableInnerWidth, 150.0);
-          final compact = innerWidth < 124;
-          final textLeft = compact ? 12.0 : 18.0;
-          final numberFontSize = compact ? 20.0 : 22.0;
-          final numberSpacing = compact ? -.9 : -1.1;
-          final percentTop = compact ? 5.2 : 5.6;
-          final numberStyle = TextStyle(
-            color: glass.text.withValues(alpha: glass.dark ? .94 : .96),
-            fontSize: numberFontSize,
-            height: .98,
-            fontWeight: AppTextWeight.semibold,
-            letterSpacing: numberSpacing,
-          );
-          final percentStyle = TextStyle(
-            color: glass.text.withValues(alpha: glass.dark ? .66 : .70),
-            fontSize: 9.5,
-            height: 1,
-            fontWeight: AppTextWeight.medium,
-            letterSpacing: -.7,
-          );
-          double measureText(String text, TextStyle style) {
-            final painter = TextPainter(
-              text: TextSpan(text: text, style: style),
-              maxLines: 1,
-              textDirection: TextDirection.ltr,
-            )..layout();
-            return painter.width;
-          }
-
-          final percentRight =
-              textLeft +
-              measureText(percentText, numberStyle) +
-              2 +
-              measureText('%', percentStyle);
-          final trackGap = compact ? 5.0 : 10.0;
-          final trackLeft = percentRight + trackGap;
-          final maxTrackWidth = math.max(0.0, innerWidth - trackLeft - 10);
-          final trackWidth = math
-              .min(compact ? 34.0 : 42.0, maxTrackWidth)
-              .clamp(0.0, 46.0)
-              .toDouble();
-          final showTrack = trackWidth >= 16;
-          return Center(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: glass.dark
-                    ? Colors.black.withValues(alpha: .13)
-                    : Colors.white.withValues(alpha: .16),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: SizedBox(
-                width: innerWidth,
-                height: 44,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Transform.translate(
-                        offset: Offset(textLeft, -.5),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(percentText, maxLines: 1, style: numberStyle),
-                            Padding(
-                              padding: EdgeInsets.only(
-                                top: percentTop,
-                                left: 2,
-                              ),
-                              child: Text(
-                                '%',
-                                maxLines: 1,
-                                style: percentStyle,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    if (showTrack)
-                      Positioned(
-                        left: trackLeft,
-                        top: 19.5,
-                        width: trackWidth,
-                        height: 5,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: glass.line.withValues(
-                              alpha: glass.dark ? .48 : .44,
-                            ),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: TweenAnimationBuilder<double>(
-                            tween: Tween<double>(
-                              begin: 0,
-                              end: p.clamp(.06, 1),
-                            ),
-                            duration: const Duration(milliseconds: 260),
-                            curve: Curves.easeOutCubic,
-                            builder: (context, value, _) {
-                              return FractionallySizedBox(
-                                widthFactor: value,
-                                alignment: Alignment.centerLeft,
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    color: glass.text.withValues(
-                                      alpha: glass.dark ? .54 : .58,
-                                    ),
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
+      child: CustomPaint(
+        painter: _ReaderProgressOverviewPainter(progress: p, glass: glass),
+        child: const SizedBox.expand(),
       ),
     );
+  }
+}
+
+class _ReaderProgressOverviewPainter extends CustomPainter {
+  const _ReaderProgressOverviewPainter({
+    required this.progress,
+    required this.glass,
+  });
+
+  final double progress;
+  final ReaderGlassPalette glass;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) {
+      return;
+    }
+    final p = progress.clamp(0.0, 1.0).toDouble();
+    final innerWidth = math.min(math.max(1.0, size.width - 12), 140.0);
+    const innerHeight = 44.0;
+    final left = (size.width - innerWidth) / 2;
+    final top = (size.height - innerHeight) / 2;
+    final rect = Rect.fromLTWH(left, top, innerWidth, innerHeight);
+    final backgroundPaint = Paint()
+      ..color = glass.dark
+          ? Colors.black.withValues(alpha: .13)
+          : Colors.white.withValues(alpha: .16)
+      ..isAntiAlias = true;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(999)),
+      backgroundPaint,
+    );
+
+    final widthT = ((innerWidth - 104) / 28).clamp(0.0, 1.0).toDouble();
+    final textLeft = _lerp(12, 18, widthT);
+    final numberFontSize = _lerp(20, 22, widthT);
+    final percentTop = _lerp(5.2, 5.6, widthT);
+    final trackGap = _lerp(5, 10, widthT);
+    final targetTrackWidth = _lerp(30, 42, widthT);
+    final numberStyle = TextStyle(
+      color: glass.text.withValues(alpha: glass.dark ? .94 : .96),
+      fontSize: numberFontSize,
+      height: .98,
+      fontWeight: AppTextWeight.semibold,
+      letterSpacing: 0,
+    );
+    final percentStyle = TextStyle(
+      color: glass.text.withValues(alpha: glass.dark ? .66 : .70),
+      fontSize: 9.5,
+      height: 1,
+      fontWeight: AppTextWeight.medium,
+      letterSpacing: 0,
+    );
+    final percentText = (p * 100).round().toString();
+    final numberPainter = _textPainter(percentText, numberStyle)..layout();
+    final signPainter = _textPainter('%', percentStyle)..layout();
+    final textX = left + textLeft;
+    final textY = top + (innerHeight - numberPainter.height) / 2 - .5;
+    numberPainter.paint(canvas, Offset(textX, textY));
+    signPainter.paint(
+      canvas,
+      Offset(textX + numberPainter.width + 2, textY + percentTop),
+    );
+
+    final trackLeft =
+        textLeft + numberPainter.width + 2 + signPainter.width + trackGap;
+    final maxTrackWidth = math.max(0.0, innerWidth - trackLeft - 10);
+    final trackWidth = math
+        .min(targetTrackWidth, maxTrackWidth)
+        .clamp(0.0, 46.0)
+        .toDouble();
+    if (trackWidth <= 0.5) {
+      return;
+    }
+    final trackOpacity = ((trackWidth - 8) / 8).clamp(0.0, 1.0).toDouble();
+    final trackRect = Rect.fromLTWH(
+      left + trackLeft,
+      top + 19.5,
+      trackWidth,
+      5,
+    );
+    final trackRadius = RRect.fromRectAndRadius(
+      trackRect,
+      const Radius.circular(999),
+    );
+    final trackPaint = Paint()
+      ..color = glass.line.withValues(
+        alpha: (glass.dark ? .48 : .44) * trackOpacity,
+      )
+      ..isAntiAlias = true;
+    final fillPaint = Paint()
+      ..color = glass.text.withValues(
+        alpha: (glass.dark ? .54 : .58) * trackOpacity,
+      )
+      ..isAntiAlias = true;
+    canvas.drawRRect(trackRadius, trackPaint);
+    final fillRect = Rect.fromLTWH(
+      trackRect.left,
+      trackRect.top,
+      trackRect.width * p.clamp(.06, 1),
+      trackRect.height,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(fillRect, const Radius.circular(999)),
+      fillPaint,
+    );
+  }
+
+  TextPainter _textPainter(String text, TextStyle style) {
+    return TextPainter(
+      text: TextSpan(text: text, style: style),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+    );
+  }
+
+  double _lerp(double begin, double end, double t) {
+    return begin + (end - begin) * t;
+  }
+
+  @override
+  bool shouldRepaint(covariant _ReaderProgressOverviewPainter oldDelegate) {
+    return oldDelegate.progress != progress ||
+        oldDelegate.glass.text != glass.text ||
+        oldDelegate.glass.line != glass.line ||
+        oldDelegate.glass.dark != glass.dark;
   }
 }
 

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models.dart';
 import '../typography.dart';
 import 'reader_enums.dart';
+import 'reader_glass_palette.dart';
 
 class ScrollEdgeTurnHintPositioned extends StatelessWidget {
   const ScrollEdgeTurnHintPositioned({
@@ -25,20 +26,16 @@ class ScrollEdgeTurnHintPositioned extends StatelessWidget {
     final isPrevious = direction == ScrollEdgeTurnDirection.previous;
     final clamped = progress.clamp(0.0, 1.0).toDouble();
     final eased = Curves.easeOutCubic.transform(clamped);
-    final targetInset = isPrevious
-        ? systemPadding.top + 58
-        : systemPadding.bottom + 58;
-    final slideDistance = 86.0 * (1 - eased);
     return Positioned(
       left: 0,
       right: 0,
-      top: isPrevious ? targetInset : null,
-      bottom: isPrevious ? null : targetInset,
+      top: isPrevious ? systemPadding.top + 18 : null,
+      bottom: isPrevious ? null : systemPadding.bottom + 18,
       child: IgnorePointer(
         child: Opacity(
           opacity: eased,
           child: Transform.translate(
-            offset: Offset(0, isPrevious ? -slideDistance : slideDistance),
+            offset: Offset(0, (isPrevious ? -18 : 18) * (1 - eased)),
             child: Center(
               child: ScrollEdgeTurnStretchHint(
                 direction: direction,
@@ -73,45 +70,44 @@ class ScrollEdgeTurnStretchHint extends StatelessWidget {
     final clamped = progress.clamp(0.0, 1.0).toDouble();
     final ready = clamped >= 1;
     final label = direction == ScrollEdgeTurnDirection.previous
-        ? (ready ? '\u4e0a\u4e00\u7ae0' : '\u7ee7\u7eed\u62c9\u52a8')
-        : (ready ? '\u4e0b\u4e00\u7ae0' : '\u7ee7\u7eed\u62c9\u52a8');
+        ? (ready
+              ? '\u677e\u624b\u4e0a\u4e00\u7ae0'
+              : '\u7ee7\u7eed\u4e0b\u62c9')
+        : (ready
+              ? '\u677e\u624b\u4e0b\u4e00\u7ae0'
+              : '\u7ee7\u7eed\u4e0a\u62c9');
+    final glass = ReaderGlassPalette.from(palette);
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 80),
       opacity: clamped <= 0 ? 0 : 1,
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: readerPalette.background.withValues(alpha: .9),
-          borderRadius: BorderRadius.circular(28),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: .12),
-              blurRadius: 18,
-              offset: const Offset(0, 7),
-            ),
-          ],
+          color: readerPalette.background.withValues(alpha: .72),
+          borderRadius: BorderRadius.circular(999),
         ),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 10, 16, 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(
-                width: 30,
-                height: 30,
+                width: 18,
+                height: 18,
                 child: CircularProgressIndicator(
                   value: clamped,
-                  strokeWidth: 3.4,
-                  strokeCap: StrokeCap.round,
-                  backgroundColor: readerPalette.muted.withValues(alpha: .18),
-                  valueColor: AlwaysStoppedAnimation<Color>(palette.primary),
+                  strokeWidth: 2.2,
+                  backgroundColor: glass.line.withValues(alpha: .34),
+                  valueColor: AlwaysStoppedAnimation(
+                    ready ? palette.primarySoft : glass.text,
+                  ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Text(
                 label,
                 style: TextStyle(
-                  color: readerPalette.text,
-                  fontSize: 13,
+                  color: glass.text,
+                  fontSize: 12,
                   fontWeight: AppTextWeight.medium,
                 ),
               ),

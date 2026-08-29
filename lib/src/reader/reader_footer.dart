@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models.dart';
@@ -6,7 +8,6 @@ import '../typography.dart';
 class ReaderFooter extends StatelessWidget {
   const ReaderFooter({
     super.key,
-    required this.now,
     required this.chapter,
     required this.chapterCount,
     required this.page,
@@ -15,7 +16,6 @@ class ReaderFooter extends StatelessWidget {
     required this.palette,
   });
 
-  final DateTime now;
   final int chapter;
   final int chapterCount;
   final int page;
@@ -25,8 +25,6 @@ class ReaderFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final time =
-        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
     final isDark =
         ThemeData.estimateBrightnessForColor(palette.background) ==
         Brightness.dark;
@@ -37,9 +35,8 @@ class ReaderFooter extends StatelessWidget {
     );
     return Row(
       children: [
-        ReaderFooterChip(
+        ReaderFooterClockChip(
           icon: isDark ? Icons.dark_mode_rounded : Icons.wb_sunny_rounded,
-          label: time,
           palette: palette,
         ),
         const Spacer(),
@@ -64,6 +61,72 @@ class ReaderFooter extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class ReaderFooterClockChip extends StatefulWidget {
+  const ReaderFooterClockChip({
+    super.key,
+    required this.icon,
+    required this.palette,
+  });
+
+  final IconData icon;
+  final ReaderPalette palette;
+
+  @override
+  State<ReaderFooterClockChip> createState() => _ReaderFooterClockChipState();
+}
+
+class _ReaderFooterClockChipState extends State<ReaderFooterClockChip> {
+  late DateTime _now;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _now = DateTime.now();
+    _scheduleNextTick();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _scheduleNextTick() {
+    _timer?.cancel();
+    final nextMinute = DateTime(
+      _now.year,
+      _now.month,
+      _now.day,
+      _now.hour,
+      _now.minute + 1,
+    );
+    final delayMs = nextMinute
+        .difference(DateTime.now())
+        .inMilliseconds
+        .clamp(250, const Duration(minutes: 1).inMilliseconds);
+    final delay = Duration(milliseconds: delayMs);
+    _timer = Timer(delay, () {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _now = DateTime.now());
+      _scheduleNextTick();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final time =
+        '${_now.hour.toString().padLeft(2, '0')}:${_now.minute.toString().padLeft(2, '0')}';
+    return ReaderFooterChip(
+      icon: widget.icon,
+      label: time,
+      palette: widget.palette,
     );
   }
 }
