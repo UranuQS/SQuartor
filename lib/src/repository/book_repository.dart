@@ -360,12 +360,10 @@ class BookRepository {
     final id = _newId();
     final bookDir = Directory(path.join((await _rootDir()).path, 'books', id));
     await bookDir.create(recursive: true);
-    final target = File(path.join(bookDir.path, path.basename(source.path)));
-    await source.copy(target.path);
 
     final title = path.basenameWithoutExtension(source.path);
     final chapters = await TxtParser.prepareTxtReader(
-      sourceFile: target,
+      sourceFile: source,
       bookDir: bookDir,
       title: title,
       decodeText: _decodeText,
@@ -378,7 +376,7 @@ class BookRepository {
       author: '本地 TXT',
       format: BookFormat.txt,
       bookDir: bookDir.path,
-      sourcePath: target.path,
+      sourcePath: source.path,
       importedAt: DateTime.now(),
       chapters: chapters,
       wordCount: _sumChapterWordCounts(chapters),
@@ -415,8 +413,6 @@ class BookRepository {
     final bookDir = Directory(path.join((await _rootDir()).path, 'books', id));
     final extractDir = Directory(path.join(bookDir.path, 'epub'));
     await extractDir.create(recursive: true);
-    final target = File(path.join(bookDir.path, path.basename(source.path)));
-    await source.copy(target.path);
 
     final archive = ZipDecoder().decodeBytes(await source.readAsBytes());
     for (final file in archive.files) {
@@ -450,8 +446,8 @@ class BookRepository {
     );
     final wordCount = _sumChapterWordCounts(chapters);
 
-    // Prune redundant intermediate text files (.xhtml, .html, .xml, .ncx, .opf) to save storage
-    await _cleanupRedundantEpubFiles(extractDir);
+    // Prune redundant intermediate text files and duplicate zip archives to minimize storage
+    await _cleanupRedundantBookFiles(bookDir);
 
     return BookEntry(
       id: id,
@@ -459,7 +455,7 @@ class BookRepository {
       author: meta.author,
       format: BookFormat.epub,
       bookDir: bookDir.path,
-      sourcePath: target.path,
+      sourcePath: source.path,
       importedAt: DateTime.now(),
       chapters: chapters,
       coverPath: meta.coverPath,
@@ -467,17 +463,39 @@ class BookRepository {
     );
   }
 
-  static Future<void> _cleanupRedundantEpubFiles(Directory extractDir) async {
-    if (!await extractDir.exists()) return;
+  static Future<void> _cleanupRedundantBookFiles(Directory bookDir) async {
+    if (!await bookDir.exists()) return;
     try {
-      final entities = extractDir.listSync(recursive: true);
-      for (final entity in entities) {
-        if (entity is File) {
-          final ext = path.extension(entity.path).toLowerCase();
-          if (const {'.xhtml', '.html', '.htm', '.xml', '.ncx', '.opf', '.txt'}.contains(ext)) {
-            try {
-              entity.deleteSync();
-            } catch (_) {}
+      // 1. Delete redundant .xhtml, .html, .xml, .ncx, .opf in epub/
+      final extractDir = Directory(path.join(bookDir.path, 'epub'));
+      if (await extractDir.exists()) {
+        final entities = extractDir.listSync(recursive: true);
+        for (final entity in entities) {
+          if (entity is File) {
+            final ext = path.extension(entity.path).toLowerCase();
+            if (const {'.xhtml', '.html', '.htm', '.xml', '.ncx', '.opf', '.txt'}.contains(ext)) {
+              try {
+                entity.deleteSync();
+              } catch (_) {}
+            }
+          }
+        }
+      }
+
+      // 2. Delete duplicate .epub or .txt source archives in bookDir root if reader chapters exist
+      final readerDir = Directory(path.join(bookDir.path, 'reader'));
+      final txtReaderDir = Directory(path.join(bookDir.path, 'txt-reader'));
+      final hasPreparedChapters = (await readerDir.exists() && readerDir.listSync().isNotEmpty) ||
+          (await txtReaderDir.exists() && txtReaderDir.listSync().isNotEmpty);
+      if (hasPreparedChapters) {
+        for (final entity in bookDir.listSync(recursive: false)) {
+          if (entity is File) {
+            final ext = path.extension(entity.path).toLowerCase();
+            if (ext == '.epub' || ext == '.txt') {
+              try {
+                entity.deleteSync();
+              } catch (_) {}
+            }
           }
         }
       }
@@ -526,14 +544,13 @@ class BookRepository {
       }
     } catch (_) {}
 
-    // 2. Clean all redundant epub files in books/
+    // 2. Clean all redundant epub files and duplicate archives in books/
     try {
       final root = await _rootDir();
       final booksDir = Directory(path.join(root.path, 'books'));
       if (await booksDir.exists()) {
         for (final bookSub in booksDir.listSync().whereType<Directory>()) {
-          final epubDir = Directory(path.join(bookSub.path, 'epub'));
-          await _cleanupRedundantEpubFiles(epubDir);
+          await _cleanupRedundantBookFiles(bookSub);
         }
       }
     } catch (_) {}
@@ -546,8 +563,8 @@ class BookRepository {
       final readerDir = path.join(book.bookDir, 'reader');
       var alreadyPrepared = book.format != BookFormat.epub;
       if (book.format == BookFormat.epub) {
-        // Opportunistically prune redundant intermediate files from existing books
-        unawaited(_cleanupRedundantEpubFiles(Directory(path.join(book.bookDir, 'epub'))));
+        // Opportunistically prune redundant intermediate files and duplicate archives from existing books
+        unawaited(_cleanupRedundantBookFiles(Directory(book.bookDir)));
         final versionFile = File(
           path.join(readerDir, EpubParser.epubReaderVersionFile),
         );
@@ -621,6 +638,8 @@ class BookRepository {
         upgraded.add(book);
         continue;
       }
+      // Opportunistically prune duplicate txt source archives from existing books
+      unawaited(_cleanupRedundantBookFiles(Directory(book.bookDir)));
       final readerDir = path.join(book.bookDir, 'txt-reader');
       final versionFile = File(
         path.join(readerDir, TxtParser.txtReaderVersionFile),
