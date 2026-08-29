@@ -72,12 +72,14 @@ EpubFlowDocument normalizeEpubFlow(
       .map((element) => element.text)
       .toList();
   final allCss = [...inlineStyles, ...extraCssSources];
+  final cssResolver = _CssStyleResolver(allCss);
 
   final footnotes = _extractFootnotes(body);
   final builder = _FlowBuilder(
     resolveLink: resolveLink,
     resolveResource: resolveResource,
     footnotes: footnotes,
+    cssResolver: cssResolver,
   );
   for (final node in body.nodes) {
     builder.walk(node);
@@ -97,6 +99,107 @@ EpubFlowDocument normalizeEpubFlow(
     textLength: builder.textLength,
     mediaCount: builder.mediaCount,
   );
+}
+
+class _CssStyleResolver {
+  _CssStyleResolver(List<String> cssSources) {
+    _parseCss(cssSources);
+  }
+
+  final Map<String, Map<String, String>> _rules = {};
+
+  void _parseCss(List<String> cssSources) {
+    for (final rawCss in cssSources) {
+      final css = rawCss.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '');
+      final blockRegex = RegExp(r'([^{]+)\{([^}]+)\}');
+      for (final match in blockRegex.allMatches(css)) {
+        final rawSelectors = match.group(1) ?? '';
+        final rawDecls = match.group(2) ?? '';
+        final declMap = <String, String>{};
+        for (final decl in rawDecls.split(';')) {
+          final colon = decl.indexOf(':');
+          if (colon > 0) {
+            final prop = decl.substring(0, colon).trim().toLowerCase();
+            final val = decl.substring(colon + 1).trim();
+            if (prop == 'color' ||
+                prop == 'background-color' ||
+                prop == 'text-align' ||
+                prop == 'font-weight' ||
+                prop == 'font-style' ||
+                prop == 'text-decoration') {
+              declMap[prop] = val;
+            }
+          }
+        }
+        if (declMap.isEmpty) continue;
+        for (final sel in rawSelectors.split(',')) {
+          final s = sel.trim().toLowerCase();
+          if (s.isNotEmpty) {
+            _rules.putIfAbsent(s, () => {}).addAll(declMap);
+          }
+        }
+      }
+    }
+  }
+
+  Map<String, String> resolveElementStyles(dom.Element element) {
+    final result = <String, String>{};
+    final tag = element.localName?.toLowerCase() ?? '';
+    final id = element.id.toLowerCase();
+    final classes = element.classes.map((c) => c.toLowerCase()).toList();
+
+    // 1. Tag match (e.g. "div", "h2", "p", "span")
+    if (_rules.containsKey(tag)) {
+      result.addAll(_rules[tag]!);
+    }
+
+    // 2. Class matches (e.g. ".orange", "div.orange")
+    for (final cls in classes) {
+      if (_rules.containsKey('.$cls')) {
+        result.addAll(_rules['.$cls']!);
+      }
+      if (_rules.containsKey('$tag.$cls')) {
+        result.addAll(_rules['$tag.$cls']!);
+      }
+    }
+
+    // 3. ID matches
+    if (id.isNotEmpty) {
+      if (_rules.containsKey('#$id')) {
+        result.addAll(_rules['#$id']!);
+      }
+    }
+
+    // 4. <font color="..."> legacy tag
+    if (tag == 'font') {
+      final color = element.attributes['color'];
+      if (color != null && color.isNotEmpty) {
+        result['color'] = color;
+      }
+    }
+
+    // 5. Inline style attribute (highest priority)
+    final inlineStyle = element.attributes['style'];
+    if (inlineStyle != null && inlineStyle.isNotEmpty) {
+      for (final decl in inlineStyle.split(';')) {
+        final colon = decl.indexOf(':');
+        if (colon > 0) {
+          final prop = decl.substring(0, colon).trim().toLowerCase();
+          final val = decl.substring(colon + 1).trim();
+          if (prop == 'color' ||
+              prop == 'background-color' ||
+              prop == 'text-align' ||
+              prop == 'font-weight' ||
+              prop == 'font-style' ||
+              prop == 'text-decoration') {
+            result[prop] = val;
+          }
+        }
+      }
+    }
+
+    return result;
+  }
 }
 
 String? _extractBackgroundImage(dom.Element body, List<String> cssSources) {
@@ -183,6 +286,7 @@ class _FlowBuilder {
     required this.resolveLink,
     required this.resolveResource,
     required this.footnotes,
+    this.cssResolver,
   });
 
   static const _ignoredTags = {'script', 'style', 'noscript', 'template'};
@@ -230,6 +334,7 @@ class _FlowBuilder {
   final EpubHrefResolver resolveLink;
   final EpubHrefResolver resolveResource;
   final Map<String, String> footnotes;
+  final _CssStyleResolver? cssResolver;
   final List<String> blocks = [];
   var textLength = 0;
   var mediaCount = 0;
@@ -237,9 +342,50 @@ class _FlowBuilder {
   void insertCoverImage(String resolvedSrc) {
     blocks.insert(
       0,
-      '<figure class="sq-flow-image sq-cover-image"><img src="${_attributeEscape.convert(resolvedSrc)}" alt="" /></figure>',
+      '<div class="sq-media sq-cover-media"><img src="${_attributeEscape.convert(resolvedSrc)}" alt="" /></div>',
     );
     mediaCount += 1;
+  }
+
+  String _elementAttributes(
+    dom.Element element, {
+    String? extraClass,
+    bool skipStyle = false,
+  }) {
+    final attributes = <String>[];
+    final id = element.attributes['id'];
+    final name = element.attributes['name'];
+    if (id != null && id.isNotEmpty) {
+      attributes.add('id="${_attributeEscape.convert(id)}"');
+    }
+    if (name != null && name.isNotEmpty && name != id) {
+      attributes.add('name="${_attributeEscape.convert(name)}"');
+    }
+
+    final classList = <String>[];
+    if (extraClass != null && extraClass.isNotEmpty) {
+      classList.add(extraClass);
+    }
+    for (final c in element.classes) {
+      if (!classList.contains(c)) {
+        classList.add(c);
+      }
+    }
+    if (classList.isNotEmpty) {
+      attributes.add('class="${_attributeEscape.convert(classList.join(' '))}"');
+    }
+
+    if (!skipStyle && cssResolver != null) {
+      final styles = cssResolver!.resolveElementStyles(element);
+      if (styles.isNotEmpty) {
+        final styleStr = styles.entries
+            .map((e) => '${e.key}: ${e.value}')
+            .join('; ');
+        attributes.add('style="${_attributeEscape.convert(styleStr)}"');
+      }
+    }
+
+    return attributes.isEmpty ? '' : ' ${attributes.join(' ')}';
   }
 
   void walk(dom.Node node) {
@@ -281,7 +427,7 @@ class _FlowBuilder {
       if (text.isNotEmpty) {
         textLength += _compactLength(text);
         blocks.add(
-          '<pre${_anchorAttributes(node)}>${_textEscape.convert(text)}</pre>',
+          '<pre${_elementAttributes(node)}>${_textEscape.convert(text)}</pre>',
         );
       }
       return;
@@ -294,7 +440,7 @@ class _FlowBuilder {
       return;
     }
     if (tag == 'hr') {
-      blocks.add('<hr${_anchorAttributes(node)} />');
+      blocks.add('<hr${_elementAttributes(node)} />');
       return;
     }
     if (tag == 'table') {
@@ -377,9 +523,8 @@ class _FlowBuilder {
       return;
     }
     textLength += _compactLength(text);
-    final classAttribute = extraClass == null ? '' : ' class="$extraClass"';
     blocks.add(
-      '<$outputTag$classAttribute${_anchorAttributes(source)}>$inner</$outputTag>',
+      '<$outputTag${_elementAttributes(source, extraClass: extraClass)}>$inner</$outputTag>',
     );
   }
 
@@ -399,7 +544,7 @@ class _FlowBuilder {
       return;
     }
     mediaCount += 1;
-    blocks.add('<div class="sq-media"${_anchorAttributes(source)}>$html</div>');
+    blocks.add('<div class="sq-media"${_elementAttributes(source)}>$html</div>');
   }
 
   String _inlineHtml(dom.Node node) {
@@ -442,12 +587,15 @@ class _FlowBuilder {
       final href = rawHref == null || rawHref.isEmpty
           ? ''
           : ' href="${_attributeEscape.convert(resolveLink(rawHref))}"';
-      return '<a$href${_anchorAttributes(node)}>$children</a>';
+      return '<a$href${_elementAttributes(node)}>$children</a>';
     }
     if (_inlineTags.contains(tag)) {
-      return '<$tag${_anchorAttributes(node)}>$children</$tag>';
+      return '<$tag${_elementAttributes(node)}>$children</$tag>';
     }
-    return '<span${_anchorAttributes(node)}>$children</span>';
+    if (tag == 'font') {
+      return '<span${_elementAttributes(node)}>$children</span>';
+    }
+    return '<span${_elementAttributes(node)}>$children</span>';
   }
 
   String _mediaHtml(dom.Element source) {

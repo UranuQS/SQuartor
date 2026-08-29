@@ -208,7 +208,6 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
     ' margin-right: 0 !important;' +
     ' margin-bottom: ' + cfg.paragraphSpacing + 'px !important;' +
     ' padding: 0 !important;' +
-    ' color: inherit !important;' +
     ' text-align: start !important;' +
     ' writing-mode: horizontal-tb !important;' +
     ' break-before: auto !important;' +
@@ -217,7 +216,7 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
     ' orphans: 1 !important;' +
     ' widows: 1 !important;' +
     '}\\n' +
-    '#squartor-source p {' +
+    '#squartor-source p:not([style*="text-align"]) {' +
     ' text-align: justify !important;' +
     ' text-align-last: auto !important;' +
     '}\\n' +
@@ -334,8 +333,9 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
     ' object-fit: contain !important;' +
     ' margin: 0 auto !important;' +
     '}\\n' +
-    'p { margin-top: 0 !important; margin-left: 0 !important; margin-right: 0 !important; margin-bottom: ' + cfg.paragraphSpacing + 'px !important; text-indent: ' + (cfg.firstLineIndent ? '2em' : '0') + ' !important; text-align: justify !important; text-align-last: auto !important; break-inside: auto !important; }\\n' +
-    'p:first-child, .sq-title-block, .sq-list-item, .sq-table-row, .sq-quote { text-indent: 0 !important; }\\n' +
+    'p { margin-top: 0 !important; margin-left: 0 !important; margin-right: 0 !important; margin-bottom: ' + cfg.paragraphSpacing + 'px !important; text-indent: ' + (cfg.firstLineIndent ? '2em' : '0') + ' !important; break-inside: auto !important; }\\n' +
+    'p:not([style*="text-align"]) { text-align: justify !important; text-align-last: auto !important; }\\n' +
+    'p:first-child, p[style*="text-align: center"], p[style*="text-align:center"], p[style*="text-align: right"], p[style*="text-align:right"], .sq-title-block, .sq-list-item, .sq-table-row, .sq-quote { text-indent: 0 !important; }\\n' +
     'h1 { font-size: ' + (effectiveFontSize * 1.45) + 'px !important; line-height: 1.35 !important; }\\n' +
     'h2 { font-size: ' + (effectiveFontSize * 1.22) + 'px !important; line-height: 1.35 !important; }\\n' +
     'h3, h4, h5, h6 { font-size: ' + (effectiveFontSize * 1.08) + 'px !important; line-height: 1.35 !important; }\\n' +
