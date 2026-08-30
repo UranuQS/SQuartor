@@ -17,6 +17,68 @@ import 'reader_state_fields.dart';
 import 'reader_txt_view.dart';
 
 mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
+  Future<String> resolveChapterRawHtml(ReaderChapter chapter) async {
+    if (chapter.filePath.startsWith('sq-epub://')) {
+      final rest = chapter.filePath.substring('sq-epub://'.length);
+      final hashIndex = rest.indexOf('#');
+      final epubPath = hashIndex >= 0 ? rest.substring(0, hashIndex) : rest;
+      final chapterHref = hashIndex >= 0 ? rest.substring(hashIndex + 1) : '';
+      return EpubStreamReader.readEpubChapterHtml(
+        epubPath,
+        chapterHref,
+        decodeText: (bytes) => utf8.decode(bytes, allowMalformed: true),
+      );
+    }
+    final file = File(chapter.filePath);
+    if (await file.exists()) {
+      return file.readAsString();
+    }
+    var source = readerBook.sourcePath;
+    if (source == null || !await File(source).exists()) {
+      final candidateDirs = [
+        '/sdcard/Download',
+        '/storage/emulated/0/Download',
+        '/storage/emulated/0/Books',
+        '/storage/emulated/0/Documents',
+        '/sdcard',
+        readerBook.bookDir,
+      ];
+      final fileName = source != null && source.isNotEmpty
+          ? path.basename(source)
+          : '${readerBook.title}.epub';
+      for (final dir in candidateDirs) {
+        final c = File(path.join(dir, fileName));
+        if (await c.exists()) {
+          source = c.path;
+          break;
+        }
+      }
+      if (source == null || !await File(source).exists()) {
+        for (final dirPath in candidateDirs) {
+          final dir = Directory(dirPath);
+          if (!await dir.exists()) continue;
+          try {
+            for (final entity in dir.listSync()) {
+              if (entity is File && entity.path.endsWith('.epub') && entity.path.contains(readerBook.title)) {
+                source = entity.path;
+                break;
+              }
+            }
+          } catch (_) {}
+          if (source != null && await File(source).exists()) break;
+        }
+      }
+    }
+    if (source != null && await File(source).exists()) {
+      return EpubStreamReader.readEpubChapterHtml(
+        source,
+        chapter.href.split('#').first,
+        decodeText: (bytes) => utf8.decode(bytes, allowMalformed: true),
+      );
+    }
+    throw FileSystemException('EPUB chapter file not found', chapter.filePath);
+  }
+
   @override
   Future<void> loadCurrentWebViewChapter() async {
     final ctrl = controller;
@@ -31,25 +93,7 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
       readerLog('load webview chapter=$chapterIndex file=${chapter.filePath}');
       if (chapter.filePath.startsWith('sq-epub://') ||
           !File(chapter.filePath).existsSync()) {
-        String raw;
-        if (chapter.filePath.startsWith('sq-epub://')) {
-          final rest = chapter.filePath.substring('sq-epub://'.length);
-          final hashIndex = rest.indexOf('#');
-          final epubPath = hashIndex >= 0 ? rest.substring(0, hashIndex) : rest;
-          final chapterHref = hashIndex >= 0 ? rest.substring(hashIndex + 1) : '';
-          raw = await EpubStreamReader.readEpubChapterHtml(
-            epubPath,
-            chapterHref,
-            decodeText: (bytes) => utf8.decode(bytes, allowMalformed: true),
-          );
-        } else {
-          final source = readerBook.sourcePath ?? '';
-          raw = await EpubStreamReader.readEpubChapterHtml(
-            source,
-            chapter.href.split('#').first,
-            decodeText: (bytes) => utf8.decode(bytes, allowMalformed: true),
-          );
-        }
+        final raw = await resolveChapterRawHtml(chapter);
         await ctrl.loadData(
           data: raw,
           mimeType: 'text/html',
@@ -1125,34 +1169,7 @@ mixin ReaderEpubMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
     String? anchor,
     String? endAnchor,
   }) async {
-    String raw;
-    if (chapter.filePath.startsWith('sq-epub://')) {
-      final rest = chapter.filePath.substring('sq-epub://'.length);
-      final hashIndex = rest.indexOf('#');
-      final epubPath = hashIndex >= 0 ? rest.substring(0, hashIndex) : rest;
-      final chapterHref = hashIndex >= 0 ? rest.substring(hashIndex + 1) : '';
-      raw = await EpubStreamReader.readEpubChapterHtml(
-        epubPath,
-        chapterHref,
-        decodeText: (bytes) => utf8.decode(bytes, allowMalformed: true),
-      );
-    } else {
-      final file = File(chapter.filePath);
-      if (await file.exists()) {
-        raw = await file.readAsString();
-      } else {
-        final source = readerBook.sourcePath ?? '';
-        if (source.isNotEmpty && await File(source).exists()) {
-          raw = await EpubStreamReader.readEpubChapterHtml(
-            source,
-            chapter.href.split('#').first,
-            decodeText: (bytes) => utf8.decode(bytes, allowMalformed: true),
-          );
-        } else {
-          throw FileSystemException('EPUB chapter file not found', chapter.filePath);
-        }
-      }
-    }
+    final raw = await resolveChapterRawHtml(chapter);
 
     final document = html_parser.parse(raw);
     final body = document.body;

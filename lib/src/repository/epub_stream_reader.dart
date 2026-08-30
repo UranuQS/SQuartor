@@ -67,7 +67,13 @@ class EpubStreamReader {
   }
 
   static ArchiveFile? findArchiveFile(Archive archive, String relativeHref) {
-    final normalized = EpubParser.normalizeEpubHref(relativeHref).toLowerCase();
+    if (relativeHref.isEmpty) return null;
+    final cleanHref = relativeHref.split('#').first.split('?').first;
+    final decodedHref = Uri.decodeFull(cleanHref);
+    final normalized = EpubParser.normalizeEpubHref(decodedHref).toLowerCase();
+    final base = path.basename(decodedHref).toLowerCase();
+
+    // 1. Exact or normalized full path match
     for (final file in archive.files) {
       if (!file.isFile) continue;
       final fileNorm = EpubParser.normalizeEpubHref(file.name).toLowerCase();
@@ -75,7 +81,15 @@ class EpubStreamReader {
         return file;
       }
     }
-    final base = path.basename(relativeHref).toLowerCase();
+    // 2. Suffix match (e.g. "Text/chapter1.xhtml" matches "OEBPS/Text/chapter1.xhtml")
+    for (final file in archive.files) {
+      if (!file.isFile) continue;
+      final fileNameLower = file.name.toLowerCase().replaceAll('\\', '/');
+      if (fileNameLower.endsWith(normalized) || normalized.endsWith(fileNameLower)) {
+        return file;
+      }
+    }
+    // 3. Basename match
     for (final file in archive.files) {
       if (!file.isFile) continue;
       if (path.basename(file.name).toLowerCase() == base) {
@@ -371,15 +385,85 @@ class EpubStreamReader {
     return null;
   }
 
+  static Future<String?> extractCoverIfMissing(
+    String epubPath,
+    Directory bookDir, {
+    required String Function(List<int> bytes) decodeText,
+  }) async {
+    try {
+      final coverFile = File(path.join(bookDir.path, 'cover.jpg'));
+      if (await coverFile.exists() && await coverFile.length() > 0) {
+        return coverFile.path;
+      }
+      final archive = await getArchive(epubPath);
+      final containerFile = findArchiveFile(archive, 'META-INF/container.xml');
+      if (containerFile == null) return null;
+      final containerXml = XmlDocument.parse(decodeText(containerFile.content as List<int>));
+      final opfPath = containerXml
+          .findAllElements('rootfile')
+          .firstOrNull
+          ?.getAttribute('full-path');
+      if (opfPath == null) return null;
+      final opfFile = findArchiveFile(archive, opfPath);
+      if (opfFile == null) return null;
+      final opfXml = XmlDocument.parse(decodeText(opfFile.content as List<int>));
+      final opfDir = path.posix.dirname(opfPath);
+      final manifest = <String, ManifestItem>{};
+      for (final item in opfXml.findAllElements('item')) {
+        final id = item.getAttribute('id') ?? '';
+        final href = item.getAttribute('href') ?? '';
+        final mediaType = item.getAttribute('media-type') ?? '';
+        final properties = item.getAttribute('properties') ?? '';
+        if (id.isNotEmpty && href.isNotEmpty) {
+          manifest[id] = ManifestItem(
+            id: id,
+            href: href,
+            fullHref: EpubParser.resolveEpubHref(opfDir, href),
+            mediaType: mediaType,
+            properties: properties,
+          );
+        }
+      }
+      final coverHref = _findCoverEntryHref(opfXml, manifest);
+      if (coverHref != null) {
+        final img = findArchiveFile(archive, coverHref);
+        if (img != null) {
+          await bookDir.create(recursive: true);
+          await coverFile.writeAsBytes(img.content as List<int>, flush: false);
+          return coverFile.path;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   static Future<String> readEpubChapterHtml(
     String epubPath,
     String chapterHref, {
     required String Function(List<int> bytes) decodeText,
   }) async {
     final archive = await getArchive(epubPath);
-    final file = findArchiveFile(archive, chapterHref);
+    var file = findArchiveFile(archive, chapterHref);
     if (file == null) {
-      throw FileSystemException('EPUB chapter not found in archive', '$epubPath#$chapterHref');
+      // Fallback 1: try matching chapter numbers or first readable xhtml file
+      final numMatch = RegExp(r'(\d+)').firstMatch(chapterHref);
+      final xhtmlFiles = archive.files
+          .where((f) => f.isFile && (f.name.endsWith('.xhtml') || f.name.endsWith('.html') || f.name.endsWith('.htm')))
+          .toList();
+      if (numMatch != null) {
+        final idx = int.tryParse(numMatch.group(1)!);
+        if (idx != null && idx >= 0 && idx < xhtmlFiles.length) {
+          file = xhtmlFiles[idx];
+        } else if (idx != null && idx > 0 && (idx - 1) < xhtmlFiles.length) {
+          file = xhtmlFiles[idx - 1];
+        }
+      }
+      if (file == null && xhtmlFiles.isNotEmpty) {
+        file = xhtmlFiles.first;
+      }
+      if (file == null) {
+        throw FileSystemException('EPUB chapter not found in archive', '$epubPath#$chapterHref');
+      }
     }
     final rawSource = decodeText(file.content as List<int>);
 

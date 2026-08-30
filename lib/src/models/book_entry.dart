@@ -165,6 +165,7 @@ class BookEntry {
   BookEntry copyWith({
     String? title,
     String? author,
+    String? sourcePath,
     List<ReaderChapter>? chapters,
     String? coverPath,
     int? currentChapterIndex,
@@ -187,7 +188,7 @@ class BookEntry {
       author: author ?? this.author,
       format: format,
       bookDir: bookDir,
-      sourcePath: sourcePath,
+      sourcePath: sourcePath ?? this.sourcePath,
       importedAt: importedAt,
       chapters: chapters ?? this.chapters,
       coverPath: coverPath ?? this.coverPath,

@@ -555,16 +555,78 @@ class BookRepository {
     } catch (_) {}
   }
 
+  Future<String?> _findSourceFileForBook(BookEntry book) async {
+    final fileName = book.sourcePath != null && book.sourcePath!.isNotEmpty
+        ? path.basename(book.sourcePath!)
+        : '${book.title}.${book.format == BookFormat.epub ? 'epub' : 'txt'}';
+    final candidateDirs = [
+      '/sdcard/Download',
+      '/storage/emulated/0/Download',
+      '/storage/emulated/0/Books',
+      '/storage/emulated/0/Documents',
+      '/sdcard',
+      book.bookDir,
+    ];
+    for (final dir in candidateDirs) {
+      final candidate = File(path.join(dir, fileName));
+      if (await candidate.exists()) {
+        return candidate.path;
+      }
+    }
+    for (final dirPath in candidateDirs) {
+      final dir = Directory(dirPath);
+      if (!await dir.exists()) continue;
+      try {
+        for (final entity in dir.listSync(recursive: false)) {
+          if (entity is File) {
+            final name = path.basename(entity.path);
+            if (name.contains(book.title) &&
+                (name.endsWith('.epub') || name.endsWith('.txt'))) {
+              return entity.path;
+            }
+          }
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
   Future<List<BookEntry>> _upgradeImportedEpubs(List<BookEntry> books) async {
     var changed = false;
     final upgraded = <BookEntry>[];
-    for (final book in books) {
+    for (var book in books) {
       if (book.format != BookFormat.epub) {
         upgraded.add(book);
         continue;
       }
+
+      var sourcePath = book.sourcePath;
+      if (sourcePath == null || !await File(sourcePath).exists()) {
+        final found = await _findSourceFileForBook(book);
+        if (found != null) {
+          sourcePath = found;
+          book = book.copyWith(sourcePath: found);
+          changed = true;
+        }
+      }
+
+      // Check and restore cover if missing or broken
+      final coverFile = book.coverPath != null ? File(book.coverPath!) : null;
+      final coverExists = coverFile != null && await coverFile.exists();
+      if (!coverExists && sourcePath != null && await File(sourcePath).exists()) {
+        final restoredCover = await EpubStreamReader.extractCoverIfMissing(
+          sourcePath,
+          Directory(book.bookDir),
+          decodeText: _decodeText,
+        );
+        if (restoredCover != null) {
+          book = book.copyWith(coverPath: restoredCover);
+          changed = true;
+        }
+      }
+
       // Opportunistically prune redundant intermediate files from disk only if valid source exists
-      await _cleanupRedundantBookFiles(Directory(book.bookDir), sourcePath: book.sourcePath);
+      await _cleanupRedundantBookFiles(Directory(book.bookDir), sourcePath: sourcePath);
 
       final isAlreadyStream = book.chapters.isNotEmpty &&
           book.chapters.every((chapter) => chapter.filePath.startsWith('sq-epub://'));
@@ -573,8 +635,7 @@ class BookRepository {
         continue;
       }
 
-      final sourcePath = book.sourcePath;
-      if (sourcePath != null && sourcePath.isNotEmpty && await File(sourcePath).exists()) {
+      if (sourcePath != null && await File(sourcePath).exists()) {
         try {
           final streamBook = await EpubStreamReader.importEpubDirect(
             File(sourcePath),
@@ -621,13 +682,24 @@ class BookRepository {
   Future<List<BookEntry>> _upgradeImportedTxts(List<BookEntry> books) async {
     var changed = false;
     final upgraded = <BookEntry>[];
-    for (final book in books) {
+    for (var book in books) {
       if (book.format != BookFormat.txt) {
         upgraded.add(book);
         continue;
       }
+
+      var sourcePath = book.sourcePath;
+      if (sourcePath == null || !await File(sourcePath).exists()) {
+        final found = await _findSourceFileForBook(book);
+        if (found != null) {
+          sourcePath = found;
+          book = book.copyWith(sourcePath: found);
+          changed = true;
+        }
+      }
+
       // Opportunistically prune duplicate txt files from disk only if valid source exists
-      await _cleanupRedundantBookFiles(Directory(book.bookDir), sourcePath: book.sourcePath);
+      await _cleanupRedundantBookFiles(Directory(book.bookDir), sourcePath: sourcePath);
 
       final isAlreadyStream = book.chapters.isNotEmpty &&
           book.chapters.every((chapter) => chapter.filePath.startsWith('sq-txt://'));
@@ -636,8 +708,7 @@ class BookRepository {
         continue;
       }
 
-      final sourcePath = book.sourcePath;
-      if (sourcePath != null && sourcePath.isNotEmpty && await File(sourcePath).exists()) {
+      if (sourcePath != null && await File(sourcePath).exists()) {
         try {
           final streamBook = await TxtStreamReader.importTxtDirect(
             File(sourcePath),

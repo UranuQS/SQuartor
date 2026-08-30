@@ -7,6 +7,7 @@ import 'dart:typed_data' as typed_data show ByteData;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FontLoader;
 import 'package:html/parser.dart' as html_parser;
+import 'package:path/path.dart' as path;
 
 import '../models.dart';
 import '../repository/txt_stream_reader.dart';
@@ -192,8 +193,43 @@ mixin ReaderTxtMixin<T extends ReaderScreenWidget> on ReaderStateFields<T> {
       if (await file.exists()) {
         raw = await file.readAsString();
       } else {
-        final source = readerBook.sourcePath ?? '';
-        if (source.isNotEmpty && await File(source).exists()) {
+        var source = readerBook.sourcePath;
+        if (source == null || !await File(source).exists()) {
+          final candidateDirs = [
+            '/sdcard/Download',
+            '/storage/emulated/0/Download',
+            '/storage/emulated/0/Books',
+            '/storage/emulated/0/Documents',
+            '/sdcard',
+            readerBook.bookDir,
+          ];
+          final fileName = source != null && source.isNotEmpty
+              ? path.basename(source)
+              : '${readerBook.title}.txt';
+          for (final dir in candidateDirs) {
+            final c = File(path.join(dir, fileName));
+            if (await c.exists()) {
+              source = c.path;
+              break;
+            }
+          }
+          if (source == null || !await File(source).exists()) {
+            for (final dirPath in candidateDirs) {
+              final dir = Directory(dirPath);
+              if (!await dir.exists()) continue;
+              try {
+                for (final entity in dir.listSync()) {
+                  if (entity is File && entity.path.endsWith('.txt') && entity.path.contains(readerBook.title)) {
+                    source = entity.path;
+                    break;
+                  }
+                }
+              } catch (_) {}
+              if (source != null && await File(source).exists()) break;
+            }
+          }
+        }
+        if (source != null && await File(source).exists()) {
           final index = readerBook.chapters.indexOf(chapter);
           raw = await TxtStreamReader.readTxtChapterHtml(
             source,
