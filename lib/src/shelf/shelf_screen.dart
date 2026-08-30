@@ -1093,26 +1093,31 @@ class _ShelfScreenState extends State<ShelfScreen> {
     HapticFeedback.selectionClick();
     final palette = widget.state.palette;
     final blocks = _buildBookBlocks(widget.state.books);
-    final groupCounts = <String, int>{};
-    final availableGroups = <String>[];
+    final groupItems = <_SeriesGroupItem>[];
     String? currentGroup;
 
     for (final block in blocks) {
       final title = block.title.trim();
       if (title.isNotEmpty) {
-        final count = block.books.length;
-        groupCounts[title] = (groupCounts[title] ?? 0) + count;
-        if (!block.books.every((b) => bookIds.contains(b.id))) {
-          if (!availableGroups.contains(title)) {
-            availableGroups.add(title);
-          }
-        }
-        if (block.books.any((b) => bookIds.contains(b.id))) {
+        final isCurrent = block.books.any((b) => bookIds.contains(b.id));
+        if (isCurrent) {
           currentGroup = title;
+        }
+        if (!block.books.every((b) => bookIds.contains(b.id))) {
+          final existing = groupItems.where((g) => g.name == title).firstOrNull;
+          if (existing == null) {
+            groupItems.add(
+              _SeriesGroupItem(
+                name: title,
+                books: block.books,
+                isCurrent: isCurrent,
+              ),
+            );
+          }
         }
       }
     }
-    availableGroups.sort((a, b) => compareNaturalText(a, b));
+    groupItems.sort((a, b) => compareNaturalText(a.name, b.name));
 
     final result = await showShelfFloatingSheet<({bool clear, String? name})>(
       context: context,
@@ -1120,9 +1125,8 @@ class _ShelfScreenState extends State<ShelfScreen> {
       child: _MoveToGroupSheetWidget(
         palette: palette,
         targetBooksCount: targetBooks.length,
-        groups: availableGroups,
+        groupItems: groupItems,
         currentGroup: currentGroup,
-        groupCounts: groupCounts,
       ),
     );
     if (!context.mounted || result == null) {
@@ -2055,20 +2059,34 @@ class _ReorderBookTile extends StatelessWidget {
   }
 }
 
+
+class _SeriesGroupItem {
+  const _SeriesGroupItem({
+    required this.name,
+    required this.books,
+    this.isCurrent = false,
+  });
+
+  final String name;
+  final List<BookEntry> books;
+  final bool isCurrent;
+
+  int get count => books.length;
+  BookEntry? get coverBook => books.firstOrNull;
+}
+
 class _MoveToGroupSheetWidget extends StatefulWidget {
   const _MoveToGroupSheetWidget({
     required this.palette,
     required this.targetBooksCount,
-    required this.groups,
+    required this.groupItems,
     required this.currentGroup,
-    required this.groupCounts,
   });
 
   final AppPalette palette;
   final int targetBooksCount;
-  final List<String> groups;
+  final List<_SeriesGroupItem> groupItems;
   final String? currentGroup;
-  final Map<String, int> groupCounts;
 
   @override
   State<_MoveToGroupSheetWidget> createState() => _MoveToGroupSheetWidgetState();
@@ -2088,27 +2106,40 @@ class _MoveToGroupSheetWidgetState extends State<_MoveToGroupSheetWidget> {
   Widget build(BuildContext context) {
     final palette = widget.palette;
     final trimmedQuery = _query.trim();
-    final filteredGroups = widget.groups.where((g) {
+    final filtered = widget.groupItems.where((g) {
       if (trimmedQuery.isEmpty) return true;
-      return g.toLowerCase().contains(trimmedQuery.toLowerCase());
+      return g.name.toLowerCase().contains(trimmedQuery.toLowerCase());
     }).toList();
 
-    final queryExactMatch = widget.groups.any(
-      (g) => g.trim().toLowerCase() == trimmedQuery.toLowerCase(),
+    final queryExactMatch = widget.groupItems.any(
+      (g) => g.name.trim().toLowerCase() == trimmedQuery.toLowerCase(),
     );
     final showCreateOption = trimmedQuery.isNotEmpty && !queryExactMatch;
 
     return ConstrainedBox(
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.sizeOf(context).height * 0.75,
+        maxHeight: MediaQuery.sizeOf(context).height * 0.78,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Drag handle
+          Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: 10, bottom: 2),
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: palette.muted.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+
           // Header
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 16, 8),
+            padding: const EdgeInsets.fromLTRB(20, 10, 14, 8),
             child: Row(
               children: [
                 Expanded(
@@ -2123,12 +2154,12 @@ class _MoveToGroupSheetWidgetState extends State<_MoveToGroupSheetWidget> {
                           fontWeight: AppTextWeight.semibold,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 3),
                       Text(
-                        '选择目标分组后，这 ${widget.targetBooksCount} 本书会移动到该分组显示。',
+                        '选择目标分组后，这 ${widget.targetBooksCount} 本书会合并到该分组。',
                         style: TextStyle(
                           color: palette.muted,
-                          fontSize: 12.5,
+                          fontSize: 12,
                           height: 1.35,
                         ),
                       ),
@@ -2146,18 +2177,22 @@ class _MoveToGroupSheetWidgetState extends State<_MoveToGroupSheetWidget> {
 
           // Search / Create Input Bar
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: Container(
-              height: 40,
+              height: 42,
               decoration: BoxDecoration(
                 color: palette.cardAlt,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: palette.line.withValues(alpha: 0.4),
+                  width: 0.8,
+                ),
               ),
               child: TextField(
                 controller: _searchController,
                 style: TextStyle(color: palette.text, fontSize: 13.5),
                 decoration: InputDecoration(
-                  hintText: '搜索或输入新分组名称...',
+                  hintText: '搜索已有分组或输入新分组名称...',
                   hintStyle: TextStyle(color: palette.muted, fontSize: 13.5),
                   prefixIcon: Icon(Icons.search_rounded, size: 18, color: palette.muted),
                   suffixIcon: _query.isNotEmpty
@@ -2177,38 +2212,79 @@ class _MoveToGroupSheetWidgetState extends State<_MoveToGroupSheetWidget> {
             ),
           ),
 
-          // Scrollable List of Groups
+          const SizedBox(height: 6),
+
+          // 2-Column Visual Card Grid of Groups
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              padding: const EdgeInsets.fromLTRB(14, 4, 14, 12),
               physics: const BouncingScrollPhysics(),
               children: [
                 if (showCreateOption)
-                  _buildGroupTile(
-                    palette: palette,
-                    icon: Icons.add_circle_outline_rounded,
-                    title: '创建并移动到「$trimmedQuery」',
-                    isNew: true,
-                    onTap: () => Navigator.pop(
-                      context,
-                      (clear: false, name: trimmedQuery),
-                    ),
-                  ),
-                for (final group in filteredGroups)
-                  _buildGroupTile(
-                    palette: palette,
-                    icon: Icons.folder_rounded,
-                    title: group,
-                    count: widget.groupCounts[group] ?? 0,
-                    isCurrent: group == widget.currentGroup,
-                    onTap: () => Navigator.pop(
-                      context,
-                      (clear: false, name: group),
-                    ),
-                  ),
-                if (filteredGroups.isEmpty && !showCreateOption)
                   Padding(
-                    padding: const EdgeInsets.all(24),
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Material(
+                      color: palette.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(14),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(14),
+                        onTap: () => Navigator.pop(
+                          context,
+                          (clear: false, name: trimmedQuery),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          child: Row(
+                            children: [
+                              Icon(Icons.add_circle_rounded, color: palette.primary, size: 22),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  '创建并移动到新分组「$trimmedQuery」',
+                                  style: TextStyle(
+                                    color: palette.primary,
+                                    fontSize: 13.5,
+                                    fontWeight: AppTextWeight.semibold,
+                                  ),
+                                ),
+                              ),
+                              Icon(Icons.arrow_forward_ios_rounded, color: palette.primary, size: 14),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                // 2-Column Grid
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final cardWidth = (constraints.maxWidth - 8) / 2;
+                    return Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final item in filtered)
+                          SizedBox(
+                            width: cardWidth,
+                            child: _buildGroupVisualCard(
+                              palette: palette,
+                              item: item,
+                              isCurrent: item.name == widget.currentGroup,
+                              onTap: () => Navigator.pop(
+                                context,
+                                (clear: false, name: item.name),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+
+                if (filtered.isEmpty && !showCreateOption)
+                  Padding(
+                    padding: const EdgeInsets.all(32),
                     child: Center(
                       child: Text(
                         '未找到匹配的分组',
@@ -2224,12 +2300,12 @@ class _MoveToGroupSheetWidgetState extends State<_MoveToGroupSheetWidget> {
 
           // Bottom Action: Reset Auto Grouping
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
               onTap: () => Navigator.pop(context, (clear: true, name: null)),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Row(
                   children: [
                     Icon(Icons.auto_awesome_rounded, size: 18, color: palette.muted),
@@ -2242,7 +2318,7 @@ class _MoveToGroupSheetWidgetState extends State<_MoveToGroupSheetWidget> {
                             '恢复自动分组',
                             style: TextStyle(
                               color: palette.text,
-                              fontSize: 13.5,
+                              fontSize: 13,
                               fontWeight: AppTextWeight.medium,
                             ),
                           ),
@@ -2263,73 +2339,132 @@ class _MoveToGroupSheetWidgetState extends State<_MoveToGroupSheetWidget> {
     );
   }
 
-  Widget _buildGroupTile({
+  Widget _buildGroupVisualCard({
     required AppPalette palette,
-    required IconData icon,
-    required String title,
-    int? count,
-    bool isCurrent = false,
-    bool isNew = false,
+    required _SeriesGroupItem item,
+    required bool isCurrent,
     required VoidCallback onTap,
   }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Material(
-        color: isCurrent
-            ? palette.primary.withValues(alpha: 0.12)
-            : Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            child: Row(
-              children: [
-                Icon(
-                  icon,
-                  size: 20,
-                  color: isCurrent
-                      ? palette.primary
-                      : (isNew ? palette.primary : palette.muted),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: isCurrent ? palette.primary : palette.text,
-                      fontSize: 14,
-                      fontWeight: isCurrent ? AppTextWeight.semibold : AppTextWeight.medium,
+    return Material(
+      color: isCurrent
+          ? palette.primary.withValues(alpha: 0.14)
+          : palette.card,
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          height: 68,
+          padding: const EdgeInsets.all(7),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isCurrent
+                  ? palette.primary.withValues(alpha: 0.55)
+                  : palette.line.withValues(alpha: 0.45),
+              width: isCurrent ? 1.5 : 0.8,
+            ),
+          ),
+          child: Row(
+            children: [
+              // Mini Cover Stack
+              SizedBox(
+                width: 36,
+                height: 52,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    if (item.count > 1)
+                      Positioned(
+                        right: 0,
+                        top: 2,
+                        bottom: 2,
+                        width: 32,
+                        child: Transform.rotate(
+                          angle: 0.08,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: palette.muted.withValues(alpha: 0.3),
+                              borderRadius: BorderRadius.circular(5),
+                            ),
+                          ),
+                        ),
+                      ),
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: 33,
+                      child: item.coverBook != null
+                          ? BookCover(
+                              book: item.coverBook!,
+                              palette: palette,
+                              width: 33,
+                              height: 52,
+                              radius: 4,
+                            )
+                          : Container(
+                              decoration: BoxDecoration(
+                                color: palette.cardAlt,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Icon(Icons.folder_rounded, size: 16, color: palette.primary),
+                            ),
                     ),
-                  ),
+                  ],
                 ),
-                if (count != null && count > 0)
-                  Container(
-                    margin: const EdgeInsets.only(left: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: palette.cardAlt,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '$count 本',
+              ),
+
+              const SizedBox(width: 8),
+
+              // Title and Count
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      item.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: palette.muted,
-                        fontSize: 11,
-                        fontWeight: AppTextWeight.medium,
+                        color: isCurrent ? palette.primary : palette.text,
+                        fontSize: 12.2,
+                        height: 1.18,
+                        fontWeight: isCurrent ? AppTextWeight.semibold : AppTextWeight.medium,
                       ),
                     ),
-                  ),
-                if (isCurrent)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: Icon(Icons.check_rounded, size: 18, color: palette.primary),
-                  ),
-              ],
-            ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: isCurrent
+                                ? palette.primary.withValues(alpha: 0.22)
+                                : palette.cardAlt,
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: Text(
+                            '${item.count} 本',
+                            style: TextStyle(
+                              color: isCurrent ? palette.primary : palette.muted,
+                              fontSize: 10,
+                              fontWeight: AppTextWeight.medium,
+                            ),
+                          ),
+                        ),
+                        if (isCurrent) ...[
+                          const Spacer(),
+                          Icon(Icons.check_circle_rounded, size: 13, color: palette.primary),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),

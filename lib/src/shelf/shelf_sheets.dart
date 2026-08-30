@@ -20,15 +20,22 @@ Future<T?> showShelfFloatingSheet<T>({
     isScrollControlled: true,
     isDismissible: isDismissible,
     showDragHandle: false,
+    useSafeArea: false,
     backgroundColor: Colors.transparent,
     elevation: 0,
     barrierColor: Colors.black.withValues(alpha: .54),
+    sheetAnimationStyle: const AnimationStyle(
+      duration: Duration(milliseconds: 320),
+      reverseDuration: Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    ),
     builder: (context) {
       final insets = MediaQuery.viewInsetsOf(context);
       return SafeArea(
         top: false,
         child: Padding(
-          padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + insets.bottom),
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + insets.bottom),
           child: _ShelfFloatingSheet(palette: palette, child: child),
         ),
       );
