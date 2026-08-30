@@ -420,36 +420,38 @@ class BookRepository {
   static Future<void> _cleanupRedundantBookFiles(Directory bookDir) async {
     if (!await bookDir.exists()) return;
     try {
-      // 1. Delete redundant .xhtml, .html, .xml, .ncx, .opf in epub/
+      // 1. Delete epub/ extract directory completely (images, fonts, text)
       final extractDir = Directory(path.join(bookDir.path, 'epub'));
       if (await extractDir.exists()) {
-        final entities = extractDir.listSync(recursive: true);
-        for (final entity in entities) {
-          if (entity is File) {
-            final ext = path.extension(entity.path).toLowerCase();
-            if (const {'.xhtml', '.html', '.htm', '.xml', '.ncx', '.opf', '.txt'}.contains(ext)) {
-              try {
-                entity.deleteSync();
-              } catch (_) {}
-            }
-          }
-        }
+        try {
+          await extractDir.delete(recursive: true);
+        } catch (_) {}
       }
 
-      // 2. Delete duplicate .epub or .txt source archives in bookDir root if reader chapters exist
+      // 2. Delete reader/ html chapters directory completely
       final readerDir = Directory(path.join(bookDir.path, 'reader'));
+      if (await readerDir.exists()) {
+        try {
+          await readerDir.delete(recursive: true);
+        } catch (_) {}
+      }
+
+      // 3. Delete txt-reader/ directory completely
       final txtReaderDir = Directory(path.join(bookDir.path, 'txt-reader'));
-      final hasPreparedChapters = (await readerDir.exists() && readerDir.listSync().isNotEmpty) ||
-          (await txtReaderDir.exists() && txtReaderDir.listSync().isNotEmpty);
-      if (hasPreparedChapters) {
-        for (final entity in bookDir.listSync(recursive: false)) {
-          if (entity is File) {
-            final ext = path.extension(entity.path).toLowerCase();
-            if (ext == '.epub' || ext == '.txt') {
-              try {
-                entity.deleteSync();
-              } catch (_) {}
-            }
+      if (await txtReaderDir.exists()) {
+        try {
+          await txtReaderDir.delete(recursive: true);
+        } catch (_) {}
+      }
+
+      // 4. Delete any duplicate raw files in bookDir root, keep only cover.jpg
+      for (final entity in bookDir.listSync(recursive: false)) {
+        if (entity is File) {
+          final name = path.basename(entity.path).toLowerCase();
+          if (name != 'cover.jpg' && name != 'cover.png') {
+            try {
+              entity.deleteSync();
+            } catch (_) {}
           }
         }
       }
@@ -509,7 +511,7 @@ class BookRepository {
       }
     } catch (_) {}
 
-    // 3. Clean all redundant epub files and duplicate archives in books/
+    // 3. Clean all legacy unzipped folders (epub/, reader/, txt-reader/) for all books
     try {
       final root = await _rootDir();
       final booksDir = Directory(path.join(root.path, 'books'));
@@ -525,69 +527,58 @@ class BookRepository {
     var changed = false;
     final upgraded = <BookEntry>[];
     for (final book in books) {
-      final readerDir = path.join(book.bookDir, 'reader');
-      var alreadyPrepared = book.format != BookFormat.epub;
-      if (book.format == BookFormat.epub) {
-        // Opportunistically prune redundant intermediate files and duplicate archives from existing books
-        unawaited(_cleanupRedundantBookFiles(Directory(book.bookDir)));
-        final versionFile = File(
-          path.join(readerDir, EpubParser.epubReaderVersionFile),
-        );
-        final hasCurrentVersion =
-            await versionFile.exists() &&
-            (await versionFile.readAsString()).trim() ==
-                EpubParser.epubReaderVersion;
-        alreadyPrepared =
-            hasCurrentVersion &&
-            book.chapters.isNotEmpty &&
-            book.chapters.every(
-              (chapter) =>
-                  path.equals(path.dirname(chapter.filePath), readerDir),
-            );
-      }
-      if (alreadyPrepared) {
+      if (book.format != BookFormat.epub) {
         upgraded.add(book);
         continue;
       }
-      try {
-        final meta = await EpubParser.parseEpub(
-          Directory(path.join(book.bookDir, 'epub')),
-          book.title,
-          decodeText: _decodeText,
-        );
-        final chapters = await EpubParser.estimateGeneratedChapterWordCounts(
-          meta.chapters,
-          estimateWordCount: _estimateWordCount,
-        );
-        final oldHref = book.safeCurrentChapter.href.split('#').first;
-        final matchingIndex = chapters.indexWhere(
-          (chapter) => chapter.href.split('#').first == oldHref,
-        );
-        final proportionalIndex = chapters.isEmpty
-            ? 0
-            : (book.progress * chapters.length).floor().clamp(
-                0,
-                chapters.length - 1,
-              );
-        upgraded.add(
-          book.copyWith(
-            title: meta.title,
-            author: meta.author,
-            chapters: chapters,
-            coverPath: meta.coverPath,
-            wordCount: _sumChapterWordCounts(chapters),
-            currentChapterIndex: matchingIndex >= 0
-                ? matchingIndex
-                : proportionalIndex,
-            currentPage: book.currentPage,
-            pageCount: book.pageCount,
-            progress: book.progress,
-          ),
-        );
-        changed = true;
-      } catch (_) {
+      // Opportunistically prune redundant intermediate files from disk
+      await _cleanupRedundantBookFiles(Directory(book.bookDir));
+
+      final isAlreadyStream = book.chapters.isNotEmpty &&
+          book.chapters.every((chapter) => chapter.filePath.startsWith('sq-epub://'));
+      if (isAlreadyStream) {
         upgraded.add(book);
+        continue;
       }
+
+      final sourcePath = book.sourcePath;
+      if (sourcePath != null && sourcePath.isNotEmpty && await File(sourcePath).exists()) {
+        try {
+          final streamBook = await EpubStreamReader.importEpubDirect(
+            File(sourcePath),
+            bookDir: Directory(book.bookDir),
+            id: book.id,
+            decodeText: _decodeText,
+            estimateWordCount: _estimateWordCount,
+          );
+          final oldHref = book.safeCurrentChapter.href.split('#').first;
+          final matchingIndex = streamBook.chapters.indexWhere(
+            (chapter) => chapter.href.split('#').first == oldHref,
+          );
+          final proportionalIndex = streamBook.chapters.isEmpty
+              ? 0
+              : (book.progress * streamBook.chapters.length).floor().clamp(
+                  0,
+                  streamBook.chapters.length - 1,
+                );
+          upgraded.add(
+            book.copyWith(
+              chapters: streamBook.chapters,
+              coverPath: streamBook.coverPath ?? book.coverPath,
+              wordCount: streamBook.wordCount ?? book.wordCount,
+              currentChapterIndex: matchingIndex >= 0
+                  ? matchingIndex
+                  : proportionalIndex,
+              currentPage: book.currentPage,
+              pageCount: book.pageCount,
+              progress: book.progress,
+            ),
+          );
+          changed = true;
+          continue;
+        } catch (_) {}
+      }
+      upgraded.add(book);
     }
     if (changed) {
       await saveBooks(upgraded);
@@ -603,65 +594,53 @@ class BookRepository {
         upgraded.add(book);
         continue;
       }
-      // Opportunistically prune duplicate txt source archives from existing books
-      unawaited(_cleanupRedundantBookFiles(Directory(book.bookDir)));
-      final readerDir = path.join(book.bookDir, 'txt-reader');
-      final versionFile = File(
-        path.join(readerDir, TxtParser.txtReaderVersionFile),
-      );
-      final hasCurrentVersion =
-          await versionFile.exists() &&
-          (await versionFile.readAsString()).trim() ==
-              TxtParser.txtReaderVersion;
-      final alreadyPrepared =
-          hasCurrentVersion &&
-          book.chapters.isNotEmpty &&
-          book.chapters.every(
-            (chapter) => path.equals(path.dirname(chapter.filePath), readerDir),
+      // Opportunistically prune duplicate txt files from disk
+      await _cleanupRedundantBookFiles(Directory(book.bookDir));
+
+      final isAlreadyStream = book.chapters.isNotEmpty &&
+          book.chapters.every((chapter) => chapter.filePath.startsWith('sq-txt://'));
+      if (isAlreadyStream) {
+        upgraded.add(book);
+        continue;
+      }
+
+      final sourcePath = book.sourcePath;
+      if (sourcePath != null && sourcePath.isNotEmpty && await File(sourcePath).exists()) {
+        try {
+          final streamBook = await TxtStreamReader.importTxtDirect(
+            File(sourcePath),
+            bookDir: Directory(book.bookDir),
+            id: book.id,
+            decodeText: _decodeText,
+            estimateWordCount: _estimateWordCount,
           );
-      if (alreadyPrepared) {
-        upgraded.add(book);
-        continue;
+          final oldTitle = book.safeCurrentChapter.title;
+          final matchingIndex = streamBook.chapters.indexWhere(
+            (chapter) => chapter.title == oldTitle,
+          );
+          final proportionalIndex = streamBook.chapters.isEmpty
+              ? 0
+              : (book.progress * streamBook.chapters.length).floor().clamp(
+                  0,
+                  streamBook.chapters.length - 1,
+                );
+          upgraded.add(
+            book.copyWith(
+              chapters: streamBook.chapters,
+              wordCount: streamBook.wordCount ?? book.wordCount,
+              currentChapterIndex: matchingIndex >= 0
+                  ? matchingIndex
+                  : proportionalIndex,
+              currentPage: book.currentPage,
+              pageCount: book.pageCount,
+              progress: book.progress,
+            ),
+          );
+          changed = true;
+          continue;
+        } catch (_) {}
       }
-      final sourceFile = File(book.sourcePath);
-      if (!await sourceFile.exists()) {
-        upgraded.add(book);
-        continue;
-      }
-      try {
-        final chapters = await TxtParser.prepareTxtReader(
-          sourceFile: sourceFile,
-          bookDir: Directory(book.bookDir),
-          title: book.title,
-          decodeText: _decodeText,
-          estimateWordCount: _estimateWordCount,
-        );
-        final oldTitle = book.safeCurrentChapter.title;
-        final matchingIndex = chapters.indexWhere(
-          (chapter) => chapter.title == oldTitle,
-        );
-        final proportionalIndex = chapters.isEmpty
-            ? 0
-            : (book.progress * chapters.length).floor().clamp(
-                0,
-                chapters.length - 1,
-              );
-        upgraded.add(
-          book.copyWith(
-            chapters: chapters,
-            wordCount: _sumChapterWordCounts(chapters),
-            currentChapterIndex: matchingIndex >= 0
-                ? matchingIndex
-                : proportionalIndex,
-            currentPage: book.currentPage,
-            pageCount: book.pageCount,
-            progress: book.progress,
-          ),
-        );
-        changed = true;
-      } catch (_) {
-        upgraded.add(book);
-      }
+      upgraded.add(book);
     }
     if (changed) {
       await saveBooks(upgraded);
