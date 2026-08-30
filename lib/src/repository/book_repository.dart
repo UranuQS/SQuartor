@@ -46,6 +46,24 @@ class BookRepository {
     books = await _upgradeImportedEpubs(books);
     books = await _upgradeImportedTxts(books);
     books = await _upgradeBookWordCounts(books);
+    try {
+      final docDir = await getApplicationDocumentsDirectory();
+      for (final name in const ['books', 'picked_books', 'open_books', 'epub', 'temp_books']) {
+        final d = Directory(path.join(docDir.path, name));
+        if (await d.exists()) {
+          try {
+            await d.delete(recursive: true);
+          } catch (_) {}
+        }
+      }
+      final root = await _rootDir();
+      final booksDir = Directory(path.join(root.path, 'books'));
+      if (await booksDir.exists()) {
+        for (final bookSub in booksDir.listSync().whereType<Directory>()) {
+          await _cleanupRedundantBookFiles(bookSub);
+        }
+      }
+    } catch (_) {}
     return BookRepositorySnapshot(
       books: books,
       fonts: _decodeFonts(prefs.getString(_fontsKey)),
@@ -417,60 +435,41 @@ class BookRepository {
     );
   }
 
-  static Future<void> _cleanupRedundantBookFiles(Directory bookDir, {String? sourcePath}) async {
+  static Future<void> _cleanupRedundantBookFiles(Directory bookDir) async {
     if (!await bookDir.exists()) return;
     try {
-      var canPrune = false;
-      if (sourcePath != null && sourcePath.isNotEmpty && await File(sourcePath).exists()) {
-        canPrune = true;
-      } else {
-        for (final candidate in [
-          path.join(bookDir.path, 'book.epub'),
-          path.join(bookDir.path, 'book.txt'),
-        ]) {
-          if (await File(candidate).exists()) {
-            canPrune = true;
-            break;
-          }
-        }
+      // 1. Delete epub/ extract directory completely (images, fonts, text)
+      final extractDir = Directory(path.join(bookDir.path, 'epub'));
+      if (await extractDir.exists()) {
+        try {
+          await extractDir.delete(recursive: true);
+        } catch (_) {}
       }
 
-      if (canPrune) {
-        // 1. Delete epub/ extract directory completely (images, fonts, text)
-        final extractDir = Directory(path.join(bookDir.path, 'epub'));
-        if (await extractDir.exists()) {
-          try {
-            await extractDir.delete(recursive: true);
-          } catch (_) {}
-        }
-
-        // 2. Delete reader/ html chapters directory completely
-        final readerDir = Directory(path.join(bookDir.path, 'reader'));
-        if (await readerDir.exists()) {
-          try {
-            await readerDir.delete(recursive: true);
-          } catch (_) {}
-        }
-
-        // 3. Delete txt-reader/ directory completely
-        final txtReaderDir = Directory(path.join(bookDir.path, 'txt-reader'));
-        if (await txtReaderDir.exists()) {
-          try {
-            await txtReaderDir.delete(recursive: true);
-          } catch (_) {}
-        }
+      // 2. Delete reader/ html chapters directory completely
+      final readerDir = Directory(path.join(bookDir.path, 'reader'));
+      if (await readerDir.exists()) {
+        try {
+          await readerDir.delete(recursive: true);
+        } catch (_) {}
       }
 
-      // 4. Delete any duplicate raw files in bookDir root, keep only cover.jpg
+      // 3. Delete txt-reader/ directory completely
+      final txtReaderDir = Directory(path.join(bookDir.path, 'txt-reader'));
+      if (await txtReaderDir.exists()) {
+        try {
+          await txtReaderDir.delete(recursive: true);
+        } catch (_) {}
+      }
+
+      // 4. Delete any duplicate raw files in bookDir root, keep ONLY cover.jpg / cover.png
       for (final entity in bookDir.listSync(recursive: false)) {
         if (entity is File) {
           final name = path.basename(entity.path).toLowerCase();
-          if (name != 'cover.jpg' && name != 'cover.png') {
-            if (canPrune || (!name.endsWith('.epub') && !name.endsWith('.txt'))) {
-              try {
-                entity.deleteSync();
-              } catch (_) {}
-            }
+          if (name != 'cover.jpg' && name != 'cover.png' && name != 'cover.webp') {
+            try {
+              entity.deleteSync();
+            } catch (_) {}
           }
         }
       }
@@ -625,8 +624,8 @@ class BookRepository {
         }
       }
 
-      // Opportunistically prune redundant intermediate files from disk only if valid source exists
-      await _cleanupRedundantBookFiles(Directory(book.bookDir), sourcePath: sourcePath);
+      // Opportunistically prune redundant intermediate files from disk
+      await _cleanupRedundantBookFiles(Directory(book.bookDir));
 
       final isAlreadyStream = book.chapters.isNotEmpty &&
           book.chapters.every((chapter) => chapter.filePath.startsWith('sq-epub://'));
@@ -698,8 +697,8 @@ class BookRepository {
         }
       }
 
-      // Opportunistically prune duplicate txt files from disk only if valid source exists
-      await _cleanupRedundantBookFiles(Directory(book.bookDir), sourcePath: sourcePath);
+      // Opportunistically prune duplicate txt files from disk
+      await _cleanupRedundantBookFiles(Directory(book.bookDir));
 
       final isAlreadyStream = book.chapters.isNotEmpty &&
           book.chapters.every((chapter) => chapter.filePath.startsWith('sq-txt://'));
@@ -861,17 +860,14 @@ class BookRepository {
   Future<String?> ensureDefaultReaderFont() async {
     try {
       final root = await _rootDir();
-      final fontsDir = Directory(path.join(root.path, 'fonts'))..createSync(recursive: true);
-      final fontFile = File(path.join(fontsDir.path, 'NotoSansSC-VF.ttf'));
-      if (!await fontFile.exists() || await fontFile.length() < 100000) {
-        final data = await rootBundle.load('assets/fonts/NotoSansSC-VF.ttf');
-        final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-        await fontFile.writeAsBytes(bytes, flush: true);
+      final fontFile = File(path.join(root.path, 'fonts', 'NotoSansSC-VF.ttf'));
+      if (await fontFile.exists()) {
+        try {
+          await fontFile.delete();
+        } catch (_) {}
       }
-      return fontFile.uri.toString();
-    } catch (_) {
-      return null;
-    }
+    } catch (_) {}
+    return null;
   }
 
   String _safeFileName(String input) {
