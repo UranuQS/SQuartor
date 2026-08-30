@@ -1097,33 +1097,12 @@ class _ShelfScreenState extends State<ShelfScreen> {
     final result = await showShelfFloatingSheet<({bool clear, String? name})>(
       context: context,
       palette: palette,
-      child: ShelfActionList(
+      child: _MoveToGroupSheetWidget(
         palette: palette,
-        title: '移动到分组',
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
-            child: Text(
-              '选择目标分组后，这 ${targetBooks.length} 本书会移动到该分组显示。',
-              style: TextStyle(color: palette.muted, height: 1.45),
-            ),
-          ),
-          for (final group in groups)
-            ShelfActionTile(
-              palette: palette,
-              icon: Icons.folder_rounded,
-              title: group,
-              subtitle: group == currentGroup ? '当前分组' : null,
-              onTap: () => Navigator.pop(context, (clear: false, name: group)),
-            ),
-          ShelfActionTile(
-            palette: palette,
-            icon: Icons.auto_awesome_rounded,
-            title: '恢复自动分组',
-            subtitle: '清除手动分组，让应用重新按书名归类',
-            onTap: () => Navigator.pop(context, (clear: true, name: null)),
-          ),
-        ],
+        targetBooksCount: targetBooks.length,
+        groups: groups,
+        currentGroup: currentGroup,
+        bookCountForGroup: (group) => _seriesBlockBookIds(group).length,
       ),
     );
     if (!context.mounted || result == null) {
@@ -2049,6 +2028,288 @@ class _ReorderBookTile extends StatelessWidget {
           const SizedBox(width: 8),
           Icon(Icons.drag_handle_rounded, color: palette.muted, size: 22),
         ],
+      ),
+    );
+  }
+}
+
+class _MoveToGroupSheetWidget extends StatefulWidget {
+  const _MoveToGroupSheetWidget({
+    required this.palette,
+    required this.targetBooksCount,
+    required this.groups,
+    required this.currentGroup,
+    required this.bookCountForGroup,
+  });
+
+  final AppPalette palette;
+  final int targetBooksCount;
+  final List<String> groups;
+  final String? currentGroup;
+  final int Function(String groupName) bookCountForGroup;
+
+  @override
+  State<_MoveToGroupSheetWidget> createState() => _MoveToGroupSheetWidgetState();
+}
+
+class _MoveToGroupSheetWidgetState extends State<_MoveToGroupSheetWidget> {
+  final TextEditingController _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = widget.palette;
+    final trimmedQuery = _query.trim();
+    final filteredGroups = widget.groups.where((g) {
+      if (trimmedQuery.isEmpty) return true;
+      return g.toLowerCase().contains(trimmedQuery.toLowerCase());
+    }).toList();
+
+    final queryExactMatch = widget.groups.any(
+      (g) => g.trim().toLowerCase() == trimmedQuery.toLowerCase(),
+    );
+    final showCreateOption = trimmedQuery.isNotEmpty && !queryExactMatch;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.75,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 16, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '移动到分组',
+                        style: TextStyle(
+                          color: palette.text,
+                          fontSize: 18,
+                          fontWeight: AppTextWeight.semibold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '选择目标分组后，这 ${widget.targetBooksCount} 本书会移动到该分组显示。',
+                        style: TextStyle(
+                          color: palette.muted,
+                          fontSize: 12.5,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.close_rounded, color: palette.muted, size: 20),
+                  onPressed: () => Navigator.pop(context),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ],
+            ),
+          ),
+
+          // Search / Create Input Bar
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            child: Container(
+              height: 40,
+              decoration: BoxDecoration(
+                color: palette.cardAlt,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: TextField(
+                controller: _searchController,
+                style: TextStyle(color: palette.text, fontSize: 13.5),
+                decoration: InputDecoration(
+                  hintText: '搜索或输入新分组名称...',
+                  hintStyle: TextStyle(color: palette.muted, fontSize: 13.5),
+                  prefixIcon: Icon(Icons.search_rounded, size: 18, color: palette.muted),
+                  suffixIcon: _query.isNotEmpty
+                      ? IconButton(
+                          icon: Icon(Icons.clear_rounded, size: 16, color: palette.muted),
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _query = '');
+                          },
+                        )
+                      : null,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                ),
+                onChanged: (val) => setState(() => _query = val),
+              ),
+            ),
+          ),
+
+          // Scrollable List of Groups
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              physics: const BouncingScrollPhysics(),
+              children: [
+                if (showCreateOption)
+                  _buildGroupTile(
+                    palette: palette,
+                    icon: Icons.add_circle_outline_rounded,
+                    title: '创建并移动到「$trimmedQuery」',
+                    isNew: true,
+                    onTap: () => Navigator.pop(
+                      context,
+                      (clear: false, name: trimmedQuery),
+                    ),
+                  ),
+                for (final group in filteredGroups)
+                  _buildGroupTile(
+                    palette: palette,
+                    icon: Icons.folder_rounded,
+                    title: group,
+                    count: widget.bookCountForGroup(group),
+                    isCurrent: group == widget.currentGroup,
+                    onTap: () => Navigator.pop(
+                      context,
+                      (clear: false, name: group),
+                    ),
+                  ),
+                if (filteredGroups.isEmpty && !showCreateOption)
+                  Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Center(
+                      child: Text(
+                        '未找到匹配的分组',
+                        style: TextStyle(color: palette.muted, fontSize: 13),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          const Divider(height: 1),
+
+          // Bottom Action: Reset Auto Grouping
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => Navigator.pop(context, (clear: true, name: null)),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                child: Row(
+                  children: [
+                    Icon(Icons.auto_awesome_rounded, size: 18, color: palette.muted),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '恢复自动分组',
+                            style: TextStyle(
+                              color: palette.text,
+                              fontSize: 13.5,
+                              fontWeight: AppTextWeight.medium,
+                            ),
+                          ),
+                          Text(
+                            '清除手动分组，让应用按书名自动归类',
+                            style: TextStyle(color: palette.muted, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGroupTile({
+    required AppPalette palette,
+    required IconData icon,
+    required String title,
+    int? count,
+    bool isCurrent = false,
+    bool isNew = false,
+    required VoidCallback onTap,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Material(
+        color: isCurrent
+            ? palette.primary.withValues(alpha: 0.12)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  size: 20,
+                  color: isCurrent
+                      ? palette.primary
+                      : (isNew ? palette.primary : palette.muted),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: isCurrent ? palette.primary : palette.text,
+                      fontSize: 14,
+                      fontWeight: isCurrent ? AppTextWeight.semibold : AppTextWeight.medium,
+                    ),
+                  ),
+                ),
+                if (count != null && count > 0)
+                  Container(
+                    margin: const EdgeInsets.only(left: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: palette.cardAlt,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '$count 本',
+                      style: TextStyle(
+                        color: palette.muted,
+                        fontSize: 11,
+                        fontWeight: AppTextWeight.medium,
+                      ),
+                    ),
+                  ),
+                if (isCurrent)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: Icon(Icons.check_rounded, size: 18, color: palette.primary),
+                  ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
