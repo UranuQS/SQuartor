@@ -29,9 +29,28 @@ class EpubStreamReader {
       _archiveLastAccess[epubPath] = DateTime.now().millisecondsSinceEpoch;
       return _archiveCache[epubPath]!;
     }
-    final file = File(epubPath);
+    var file = File(epubPath);
     if (!await file.exists()) {
-      throw FileSystemException('EPUB source file not found', epubPath);
+      final fileName = path.basename(epubPath);
+      final candidateDirs = [
+        '/sdcard/Download',
+        '/storage/emulated/0/Download',
+        '/storage/emulated/0/Books',
+        '/storage/emulated/0/Documents',
+        '/sdcard',
+      ];
+      var found = false;
+      for (final dir in candidateDirs) {
+        final candidate = File(path.join(dir, fileName));
+        if (await candidate.exists()) {
+          file = candidate;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        throw FileSystemException('EPUB source file not found', epubPath);
+      }
     }
     final bytes = await file.readAsBytes();
     final archive = ZipDecoder().decodeBytes(bytes);

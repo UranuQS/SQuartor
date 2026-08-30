@@ -535,7 +535,7 @@ class ReaderScreenState extends State<ReaderScreen>
                     Positioned.fill(
                       child: ReaderStatusOverlay(
                         readerPalette: readerPalette,
-                        message: '加载失败：_loadError',
+                        message: '加载失败：${loadError ?? "未知错误"}',
                       ),
                     ),
                   Positioned(

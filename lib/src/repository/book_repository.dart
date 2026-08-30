@@ -417,31 +417,48 @@ class BookRepository {
     );
   }
 
-  static Future<void> _cleanupRedundantBookFiles(Directory bookDir) async {
+  static Future<void> _cleanupRedundantBookFiles(Directory bookDir, {String? sourcePath}) async {
     if (!await bookDir.exists()) return;
     try {
-      // 1. Delete epub/ extract directory completely (images, fonts, text)
-      final extractDir = Directory(path.join(bookDir.path, 'epub'));
-      if (await extractDir.exists()) {
-        try {
-          await extractDir.delete(recursive: true);
-        } catch (_) {}
+      var canPrune = false;
+      if (sourcePath != null && sourcePath.isNotEmpty && await File(sourcePath).exists()) {
+        canPrune = true;
+      } else {
+        for (final candidate in [
+          path.join(bookDir.path, 'book.epub'),
+          path.join(bookDir.path, 'book.txt'),
+        ]) {
+          if (await File(candidate).exists()) {
+            canPrune = true;
+            break;
+          }
+        }
       }
 
-      // 2. Delete reader/ html chapters directory completely
-      final readerDir = Directory(path.join(bookDir.path, 'reader'));
-      if (await readerDir.exists()) {
-        try {
-          await readerDir.delete(recursive: true);
-        } catch (_) {}
-      }
+      if (canPrune) {
+        // 1. Delete epub/ extract directory completely (images, fonts, text)
+        final extractDir = Directory(path.join(bookDir.path, 'epub'));
+        if (await extractDir.exists()) {
+          try {
+            await extractDir.delete(recursive: true);
+          } catch (_) {}
+        }
 
-      // 3. Delete txt-reader/ directory completely
-      final txtReaderDir = Directory(path.join(bookDir.path, 'txt-reader'));
-      if (await txtReaderDir.exists()) {
-        try {
-          await txtReaderDir.delete(recursive: true);
-        } catch (_) {}
+        // 2. Delete reader/ html chapters directory completely
+        final readerDir = Directory(path.join(bookDir.path, 'reader'));
+        if (await readerDir.exists()) {
+          try {
+            await readerDir.delete(recursive: true);
+          } catch (_) {}
+        }
+
+        // 3. Delete txt-reader/ directory completely
+        final txtReaderDir = Directory(path.join(bookDir.path, 'txt-reader'));
+        if (await txtReaderDir.exists()) {
+          try {
+            await txtReaderDir.delete(recursive: true);
+          } catch (_) {}
+        }
       }
 
       // 4. Delete any duplicate raw files in bookDir root, keep only cover.jpg
@@ -449,9 +466,11 @@ class BookRepository {
         if (entity is File) {
           final name = path.basename(entity.path).toLowerCase();
           if (name != 'cover.jpg' && name != 'cover.png') {
-            try {
-              entity.deleteSync();
-            } catch (_) {}
+            if (canPrune || (!name.endsWith('.epub') && !name.endsWith('.txt'))) {
+              try {
+                entity.deleteSync();
+              } catch (_) {}
+            }
           }
         }
       }
@@ -544,8 +563,8 @@ class BookRepository {
         upgraded.add(book);
         continue;
       }
-      // Opportunistically prune redundant intermediate files from disk
-      await _cleanupRedundantBookFiles(Directory(book.bookDir));
+      // Opportunistically prune redundant intermediate files from disk only if valid source exists
+      await _cleanupRedundantBookFiles(Directory(book.bookDir), sourcePath: book.sourcePath);
 
       final isAlreadyStream = book.chapters.isNotEmpty &&
           book.chapters.every((chapter) => chapter.filePath.startsWith('sq-epub://'));
@@ -607,8 +626,8 @@ class BookRepository {
         upgraded.add(book);
         continue;
       }
-      // Opportunistically prune duplicate txt files from disk
-      await _cleanupRedundantBookFiles(Directory(book.bookDir));
+      // Opportunistically prune duplicate txt files from disk only if valid source exists
+      await _cleanupRedundantBookFiles(Directory(book.bookDir), sourcePath: book.sourcePath);
 
       final isAlreadyStream = book.chapters.isNotEmpty &&
           book.chapters.every((chapter) => chapter.filePath.startsWith('sq-txt://'));
