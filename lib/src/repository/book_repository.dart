@@ -222,20 +222,8 @@ class BookRepository {
   }
 
   Future<BookEntry?> pickAndImportBook() async {
-    final result = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['txt', 'epub'],
-      withData: false,
-    );
-    final picked = result?.files.single.path;
-    if (picked == null) {
-      return null;
-    }
-    final extension = path.extension(picked).toLowerCase();
-    if (extension == '.epub') {
-      return _importEpub(File(picked));
-    }
-    return _importTxt(File(picked));
+    final books = await pickAndImportBooks();
+    return books.firstOrNull;
   }
 
   Future<BookEntry> importBookFile(String filePath) async {
@@ -270,6 +258,12 @@ class BookRepository {
   }
 
   Future<List<BookEntry>> pickAndImportBooks() async {
+    if (Platform.isAndroid) {
+      final nativePaths = await _pickAndroidBookFiles();
+      if (nativePaths != null && nativePaths.isNotEmpty) {
+        return _importBookFiles(nativePaths.map((filePath) => File(filePath)));
+      }
+    }
     final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['txt', 'epub'],
@@ -281,6 +275,17 @@ class BookRepository {
       return const [];
     }
     return _importBookFiles(paths.map((filePath) => File(filePath)));
+  }
+
+  Future<List<String>?> _pickAndroidBookFiles() async {
+    try {
+      final result = await _androidPickerChannel.invokeListMethod<String>(
+        'pickBookFiles',
+      );
+      return result;
+    } on MissingPluginException {
+      return null;
+    }
   }
 
   Future<List<BookEntry>> pickAndImportBookDirectory() async {

@@ -1,4 +1,4 @@
-package com.squartor.reader
+﻿package com.squartor.reader
 
 import android.app.Activity
 import android.content.ContentValues
@@ -18,6 +18,7 @@ import java.io.File
 
 class MainActivity : FlutterActivity() {
     private var pendingDirectoryResult: MethodChannel.Result? = null
+    private var pendingFilesResult: MethodChannel.Result? = null
     private var pendingOpenBookIntent: Intent? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -25,6 +26,7 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "squartor/native_picker")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+                    "pickBookFiles" -> pickBookFiles(result)
                     "pickBookDirectory" -> pickBookDirectory(result)
                     "consumePendingOpenBook" -> consumePendingOpenBook(result)
                     "saveImageToGallery" -> saveImageToGallery(
@@ -64,38 +66,123 @@ class MainActivity : FlutterActivity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQUEST_BOOK_DIRECTORY) return
-        val result = pendingDirectoryResult ?: return
-        pendingDirectoryResult = null
-        if (resultCode != Activity.RESULT_OK || data?.data == null) {
-            result.success(emptyList<String>())
+        if (requestCode == REQUEST_BOOK_FILES) {
+            val result = pendingFilesResult ?: return
+            pendingFilesResult = null
+            if (resultCode != Activity.RESULT_OK || data == null) {
+                result.success(emptyList<String>())
+                return
+            }
+            Thread {
+                try {
+                    val uris = mutableListOf<Uri>()
+                    data.data?.let { uris.add(it) }
+                    data.clipData?.let { clip ->
+                        for (i in 0 until clip.itemCount) {
+                            uris.add(clip.getItemAt(i).uri)
+                        }
+                    }
+                    val picked = mutableListOf<String>()
+                    val targetRoot by lazy {
+                        val dir = File(cacheDir, "picked_books/${System.currentTimeMillis()}")
+                        dir.mkdirs()
+                        dir
+                    }
+                    for (uri in uris) {
+                        val realPath = resolveRealPathFromUri(uri)
+                        if (realPath != null && File(realPath).exists() && File(realPath).length() > 0L) {
+                            picked.add(realPath)
+                        } else {
+                            val displayName = displayNameForUri(uri) ?: "book"
+                            if (isImportableBookName(displayName) || isImportableBookUri(uri)) {
+                                val target = uniqueTargetFile(targetRoot, displayNameForImport(uri, displayName))
+                                contentResolver.openInputStream(uri)?.use { input ->
+                                    target.outputStream().use { output ->
+                                        input.copyTo(output)
+                                    }
+                                }
+                                if (target.exists() && target.length() > 0L) {
+                                    picked.add(target.absolutePath)
+                                } else {
+                                    target.delete()
+                                }
+                            }
+                        }
+                    }
+                    runOnUiThread { result.success(picked) }
+                } catch (error: Throwable) {
+                    runOnUiThread {
+                        result.error("PICK_BOOK_FILES_FAILED", error.message, null)
+                    }
+                }
+            }.start()
             return
         }
-        val treeUri = data.data!!
-        val flags = data.flags and
-            (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        try {
-            contentResolver.takePersistableUriPermission(
-                treeUri,
-                flags and Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-        } catch (_: Throwable) {
-            // Some providers grant temporary access only; reading below can still work.
-        }
-        Thread {
-            try {
-                val picked = mutableListOf<String>()
-                val targetRoot = File(cacheDir, "picked_books/${System.currentTimeMillis()}")
-                targetRoot.mkdirs()
-                val rootDocumentId = DocumentsContract.getTreeDocumentId(treeUri)
-                copyBookDocuments(treeUri, rootDocumentId, targetRoot, picked)
-                runOnUiThread { result.success(picked) }
-            } catch (error: Throwable) {
-                runOnUiThread {
-                    result.error("PICK_BOOK_DIRECTORY_FAILED", error.message, null)
-                }
+
+        if (requestCode == REQUEST_BOOK_DIRECTORY) {
+            val result = pendingDirectoryResult ?: return
+            pendingDirectoryResult = null
+            if (resultCode != Activity.RESULT_OK || data?.data == null) {
+                result.success(emptyList<String>())
+                return
             }
-        }.start()
+            val treeUri = data.data!!
+            val flags = data.flags and
+                (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            try {
+                contentResolver.takePersistableUriPermission(
+                    treeUri,
+                    flags and Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: Throwable) {
+            }
+            Thread {
+                try {
+                    val picked = mutableListOf<String>()
+                    val directDir = resolveRealDirectoryFromTreeUri(treeUri)
+                    if (directDir != null && directDir.isDirectory && directDir.canRead()) {
+                        directDir.walkTopDown().maxDepth(5).forEach { file ->
+                            if (file.isFile && isImportableBookName(file.name) && file.length() > 0L) {
+                                picked.add(file.absolutePath)
+                            }
+                        }
+                    } else {
+                        val targetRoot = File(cacheDir, "picked_books/${System.currentTimeMillis()}")
+                        targetRoot.mkdirs()
+                        val rootDocumentId = DocumentsContract.getTreeDocumentId(treeUri)
+                        copyBookDocuments(treeUri, rootDocumentId, targetRoot, picked)
+                    }
+                    runOnUiThread { result.success(picked) }
+                } catch (error: Throwable) {
+                    runOnUiThread {
+                        result.error("PICK_BOOK_DIRECTORY_FAILED", error.message, null)
+                    }
+                }
+            }.start()
+            return
+        }
+    }
+
+    private fun pickBookFiles(result: MethodChannel.Result) {
+        if (pendingFilesResult != null) {
+            result.error("PICKER_BUSY", "A file picker is already open.", null)
+            return
+        }
+        pendingFilesResult = result
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("application/epub+zip", "text/plain", "application/octet-stream", "*/*"))
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        try {
+            startActivityForResult(intent, REQUEST_BOOK_FILES)
+        } catch (error: Throwable) {
+            pendingFilesResult = null
+            result.error("PICK_BOOK_FILES_FAILED", error.message, null)
+        }
     }
 
     private fun pickBookDirectory(result: MethodChannel.Result) {
@@ -137,6 +224,17 @@ class MainActivity : FlutterActivity() {
         }
         Thread {
             try {
+                val realPath = resolveRealPathFromUri(uri)
+                if (realPath != null && File(realPath).exists() && File(realPath).length() > 0L) {
+                    val payload = mapOf(
+                        "path" to realPath,
+                        "name" to File(realPath).name,
+                        "size" to File(realPath).length()
+                    )
+                    runOnUiThread { result.success(payload) }
+                    return@Thread
+                }
+
                 val displayName = displayNameForUri(uri) ?: "book"
                 if (!isImportableBookName(displayName) && !isImportableBookUri(uri)) {
                     runOnUiThread { result.success(null) }
@@ -170,6 +268,77 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }.start()
+    }
+
+    private fun resolveRealPathFromUri(uri: Uri): String? {
+        if (uri.scheme == "file") {
+            return uri.path
+        }
+        if (uri.scheme == "content") {
+            val authority = uri.authority
+            if (authority == "com.android.externalstorage.documents") {
+                val docId = try {
+                    if (DocumentsContract.isDocumentUri(this, uri)) {
+                        DocumentsContract.getDocumentId(uri)
+                    } else {
+                        uri.path?.substringAfter("/document/", "")?.ifEmpty { uri.path?.substringAfter("/tree/", "") }
+                    }
+                } catch (_: Throwable) {
+                    uri.path?.substringAfter("/document/", "")?.ifEmpty { uri.path?.substringAfter("/tree/", "") }
+                }
+                if (docId != null) {
+                    val split = docId.split(":")
+                    val type = split[0]
+                    val relPath = if (split.size > 1) split[1] else ""
+                    val fullPath = if ("primary".equals(type, ignoreCase = true)) {
+                        "${Environment.getExternalStorageDirectory()}/$relPath"
+                    } else {
+                        "/storage/$type/$relPath"
+                    }
+                    val file = File(fullPath)
+                    if (file.exists() && file.canRead()) {
+                        return file.absolutePath
+                    }
+                }
+            }
+            var cursor: Cursor? = null
+            try {
+                cursor = contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.DATA), null, null, null)
+                if (cursor != null && cursor.moveToFirst()) {
+                    val index = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                    if (index >= 0) {
+                        val path = cursor.getString(index)
+                        if (path != null && File(path).exists() && File(path).canRead()) {
+                            return path
+                        }
+                    }
+                }
+            } catch (_: Throwable) {
+            } finally {
+                cursor?.close()
+            }
+        }
+        return null
+    }
+
+    private fun resolveRealDirectoryFromTreeUri(treeUri: Uri): File? {
+        try {
+            val docId = DocumentsContract.getTreeDocumentId(treeUri)
+            val split = docId.split(":")
+            val type = split[0]
+            val relPath = if (split.size > 1) split[1] else ""
+            val fullPath = if ("primary".equals(type, ignoreCase = true)) {
+                "${Environment.getExternalStorageDirectory()}/$relPath"
+            } else {
+                "/storage/$type/$relPath"
+            }
+            val dir = File(fullPath)
+            if (dir.exists() && dir.isDirectory && dir.canRead()) {
+                return dir
+            }
+        } catch (_: Throwable) {
+        }
+        return null
     }
 
     private fun displayNameForImport(uri: Uri, fallback: String): String {
@@ -382,12 +551,12 @@ class MainActivity : FlutterActivity() {
                     )
                     .invoke(window.decorView, bestMode.refreshRate, 0)
             } catch (_: Throwable) {
-                // Older compile/runtime combinations can ignore this hint.
             }
         }
     }
 
     companion object {
         private const val REQUEST_BOOK_DIRECTORY = 2309
+        private const val REQUEST_BOOK_FILES = 2310
     }
 }
