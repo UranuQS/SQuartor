@@ -1092,17 +1092,37 @@ class _ShelfScreenState extends State<ShelfScreen> {
     }
     HapticFeedback.selectionClick();
     final palette = widget.state.palette;
-    final groups = _availableSeriesGroups(excludingIds: bookIds);
-    final currentGroup = _currentSeriesBlockTitle(bookIds);
+    final blocks = _buildBookBlocks(widget.state.books);
+    final groupCounts = <String, int>{};
+    final availableGroups = <String>[];
+    String? currentGroup;
+
+    for (final block in blocks) {
+      final title = block.title.trim();
+      if (title.isNotEmpty) {
+        final count = block.books.length;
+        groupCounts[title] = (groupCounts[title] ?? 0) + count;
+        if (!block.books.every((b) => bookIds.contains(b.id))) {
+          if (!availableGroups.contains(title)) {
+            availableGroups.add(title);
+          }
+        }
+        if (block.books.any((b) => bookIds.contains(b.id))) {
+          currentGroup = title;
+        }
+      }
+    }
+    availableGroups.sort((a, b) => compareNaturalText(a, b));
+
     final result = await showShelfFloatingSheet<({bool clear, String? name})>(
       context: context,
       palette: palette,
       child: _MoveToGroupSheetWidget(
         palette: palette,
         targetBooksCount: targetBooks.length,
-        groups: groups,
+        groups: availableGroups,
         currentGroup: currentGroup,
-        bookCountForGroup: (group) => _seriesBlockBookIds(group).length,
+        groupCounts: groupCounts,
       ),
     );
     if (!context.mounted || result == null) {
@@ -1910,13 +1930,15 @@ class _BookBlockMasonry extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               for (var index = 0; index < columnBlocks.length; index++) ...[
-                BookBlockGridCard(
-                  block: columnBlocks[index],
-                  palette: palette,
-                  selectionMode: selectionMode,
-                  selectedBookIds: selectedBookIds,
-                  onTap: () => onTapBlock(columnBlocks[index]),
-                  onLongPress: () => onLongPressBlock(columnBlocks[index]),
+                RepaintBoundary(
+                  child: BookBlockGridCard(
+                    block: columnBlocks[index],
+                    palette: palette,
+                    selectionMode: selectionMode,
+                    selectedBookIds: selectedBookIds,
+                    onTap: () => onTapBlock(columnBlocks[index]),
+                    onLongPress: () => onLongPressBlock(columnBlocks[index]),
+                  ),
                 ),
                 if (index != columnBlocks.length - 1)
                   const SizedBox(height: _gap),
@@ -2039,14 +2061,14 @@ class _MoveToGroupSheetWidget extends StatefulWidget {
     required this.targetBooksCount,
     required this.groups,
     required this.currentGroup,
-    required this.bookCountForGroup,
+    required this.groupCounts,
   });
 
   final AppPalette palette;
   final int targetBooksCount;
   final List<String> groups;
   final String? currentGroup;
-  final int Function(String groupName) bookCountForGroup;
+  final Map<String, int> groupCounts;
 
   @override
   State<_MoveToGroupSheetWidget> createState() => _MoveToGroupSheetWidgetState();
@@ -2177,7 +2199,7 @@ class _MoveToGroupSheetWidgetState extends State<_MoveToGroupSheetWidget> {
                     palette: palette,
                     icon: Icons.folder_rounded,
                     title: group,
-                    count: widget.bookCountForGroup(group),
+                    count: widget.groupCounts[group] ?? 0,
                     isCurrent: group == widget.currentGroup,
                     onTap: () => Navigator.pop(
                       context,

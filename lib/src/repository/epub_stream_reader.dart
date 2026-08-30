@@ -280,6 +280,22 @@ class EpubStreamReader {
       );
     }
 
+    var totalEstimatedWords = 0;
+    for (final item in readableItems) {
+      final file = findArchiveFile(archive, item.fullHref);
+      if (file != null) {
+        if (file.content != null) {
+          final text = decodeText(file.content as List<int>);
+          totalEstimatedWords += estimateWordCount(text);
+        } else if (file.size > 0) {
+          totalEstimatedWords += (file.size * 0.35).round();
+        }
+      }
+    }
+    if (totalEstimatedWords == 0 && sourceFile.existsSync()) {
+      totalEstimatedWords = (sourceFile.lengthSync() * 0.38).round();
+    }
+
     return BookEntry(
       id: id,
       title: title?.isNotEmpty == true ? title! : fallbackTitle,
@@ -290,6 +306,7 @@ class EpubStreamReader {
       importedAt: DateTime.now(),
       chapters: chapters,
       coverPath: coverPath,
+      wordCount: totalEstimatedWords > 0 ? totalEstimatedWords : null,
     );
   }
 

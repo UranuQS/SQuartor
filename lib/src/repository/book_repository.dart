@@ -803,19 +803,56 @@ class BookRepository {
         continue;
       }
       try {
-        final chapters = book.format == BookFormat.txt
-            ? await _estimateTxtChapterWordCounts(book)
-            : await EpubParser.estimateGeneratedChapterWordCounts(
-                book.chapters,
-                estimateWordCount: _estimateWordCount,
-              );
-        final wordCount = _sumChapterWordCounts(chapters);
-        if (wordCount > 0) {
-          upgraded.add(book.copyWith(chapters: chapters, wordCount: wordCount));
-          changed = true;
+        if (book.format == BookFormat.txt) {
+          final chapters = await _estimateTxtChapterWordCounts(book);
+          final wordCount = _sumChapterWordCounts(chapters);
+          if (wordCount > 0) {
+            upgraded.add(book.copyWith(chapters: chapters, wordCount: wordCount));
+            changed = true;
+            continue;
+          }
+        } else if (book.sourcePath != null && File(book.sourcePath!).existsSync()) {
+          final sourceFile = File(book.sourcePath!);
+          final archive = await EpubStreamReader.getArchive(sourceFile.path);
+          var total = 0;
+          final updatedChapters = <ReaderChapter>[];
+          for (final chapter in book.chapters) {
+            final uri = Uri.tryParse(chapter.filePath);
+            final subPath = uri != null && uri.scheme == 'sq-epub' ? uri.fragment : chapter.filePath;
+            final f = EpubStreamReader.findArchiveFile(archive, subPath);
+            var chapterCount = 0;
+            if (f != null && f.content != null) {
+              final text = _decodeText(f.content as List<int>);
+              chapterCount = _estimateWordCount(text);
+            } else if (f != null && f.size > 0) {
+              chapterCount = (f.size * 0.35).round();
+            }
+            total += chapterCount;
+            updatedChapters.add(
+              chapter.copyWith(wordCount: chapterCount > 0 ? chapterCount : null),
+            );
+          }
+          if (total == 0) {
+            total = (sourceFile.lengthSync() * 0.38).round();
+          }
+          if (total > 0) {
+            upgraded.add(book.copyWith(chapters: updatedChapters, wordCount: total));
+            changed = true;
+            continue;
+          }
         } else {
-          upgraded.add(book);
+          final chapters = await EpubParser.estimateGeneratedChapterWordCounts(
+            book.chapters,
+            estimateWordCount: _estimateWordCount,
+          );
+          final wordCount = _sumChapterWordCounts(chapters);
+          if (wordCount > 0) {
+            upgraded.add(book.copyWith(chapters: chapters, wordCount: wordCount));
+            changed = true;
+            continue;
+          }
         }
+        upgraded.add(book);
       } catch (_) {
         upgraded.add(book);
       }
