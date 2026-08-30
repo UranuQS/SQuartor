@@ -160,6 +160,18 @@ class AppState extends ChangeNotifier {
       _statisticsChanges.notifyListeners();
       _messageChanges.notifyListeners();
     }
+    unawaited(_runBackgroundMaintenance());
+  }
+
+  Future<void> _runBackgroundMaintenance() async {
+    try {
+      final current = _books;
+      final upgraded = await _repository.runBackgroundMaintenance(current);
+      if (!listEquals(upgraded, current)) {
+        _books = _deduplicateBooks(upgraded);
+        _libraryChanges.notifyListeners();
+      }
+    } catch (_) {}
   }
 
   Future<void> importBook() async {

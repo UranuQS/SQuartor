@@ -42,11 +42,25 @@ class BookRepository {
 
   Future<BookRepositorySnapshot> loadSnapshot() async {
     final prefs = await _prefs();
-    var books = _decodeBooks(prefs.getString(_booksKey));
-    books = await _upgradeImportedEpubs(books);
-    books = await _upgradeImportedTxts(books);
-    books = await _upgradeBookWordCounts(books);
+    final books = _decodeBooks(prefs.getString(_booksKey));
+    return BookRepositorySnapshot(
+      books: books,
+      fonts: _decodeFonts(prefs.getString(_fontsKey)),
+      shelves: _decodeShelves(prefs.getString(_shelvesKey)),
+      readingStats: _decodeReadingStats(prefs.getString(_readingStatsKey)),
+      style: _decodeStyle(prefs.getString(_styleKey)),
+      cloudSyncSettings: _decodeCloudSyncSettings(
+        prefs.getString(_cloudSyncSettingsKey),
+      ),
+    );
+  }
+
+  Future<List<BookEntry>> runBackgroundMaintenance(List<BookEntry> currentBooks) async {
     try {
+      var books = currentBooks;
+      books = await _upgradeImportedEpubs(books);
+      books = await _upgradeImportedTxts(books);
+      books = await _upgradeBookWordCounts(books);
       final docDir = await getApplicationDocumentsDirectory();
       // Purge leftover debug kernel_blob and isolate_snapshot_data (77MB+10MB)
       final flutterAssets = Directory(path.join(docDir.path, 'flutter_assets'));
@@ -70,17 +84,10 @@ class BookRepository {
           await _cleanupRedundantBookFiles(bookSub);
         }
       }
-    } catch (_) {}
-    return BookRepositorySnapshot(
-      books: books,
-      fonts: _decodeFonts(prefs.getString(_fontsKey)),
-      shelves: _decodeShelves(prefs.getString(_shelvesKey)),
-      readingStats: _decodeReadingStats(prefs.getString(_readingStatsKey)),
-      style: _decodeStyle(prefs.getString(_styleKey)),
-      cloudSyncSettings: _decodeCloudSyncSettings(
-        prefs.getString(_cloudSyncSettingsKey),
-      ),
-    );
+      return books;
+    } catch (_) {
+      return currentBooks;
+    }
   }
 
   Future<List<BookEntry>> loadBooks() async {
