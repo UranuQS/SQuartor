@@ -48,6 +48,13 @@ class BookRepository {
     books = await _upgradeBookWordCounts(books);
     try {
       final docDir = await getApplicationDocumentsDirectory();
+      // Purge leftover debug kernel_blob and isolate_snapshot_data (77MB+10MB)
+      final flutterAssets = Directory(path.join(docDir.path, 'flutter_assets'));
+      if (await flutterAssets.exists()) {
+        try {
+          await flutterAssets.delete(recursive: true);
+        } catch (_) {}
+      }
       for (final name in const ['books', 'picked_books', 'open_books', 'epub', 'temp_books']) {
         final d = Directory(path.join(docDir.path, name));
         if (await d.exists()) {
@@ -543,6 +550,12 @@ class BookRepository {
     // 4. Clean legacy folders directly under application documents directory
     try {
       final docDir = await getApplicationDocumentsDirectory();
+      final flutterAssets = Directory(path.join(docDir.path, 'flutter_assets'));
+      if (await flutterAssets.exists()) {
+        try {
+          await flutterAssets.delete(recursive: true);
+        } catch (_) {}
+      }
       for (final name in const ['books', 'picked_books', 'open_books', 'epub', 'temp_books']) {
         final d = Directory(path.join(docDir.path, name));
         if (await d.exists()) {
