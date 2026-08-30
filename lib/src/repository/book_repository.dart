@@ -521,6 +521,19 @@ class BookRepository {
         }
       }
     } catch (_) {}
+
+    // 4. Clean legacy folders directly under application documents directory
+    try {
+      final docDir = await getApplicationDocumentsDirectory();
+      for (final name in const ['books', 'picked_books', 'open_books', 'epub', 'temp_books']) {
+        final d = Directory(path.join(docDir.path, name));
+        if (await d.exists()) {
+          try {
+            await d.delete(recursive: true);
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
   }
 
   Future<List<BookEntry>> _upgradeImportedEpubs(List<BookEntry> books) async {

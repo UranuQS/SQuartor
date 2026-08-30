@@ -388,27 +388,24 @@ class ReaderScreenState extends State<ReaderScreen>
                                   },
                                   onLoadStop: (ctrl, url) async {
                                     readerLog('webview loadStop url=$url');
-                                    if (url == null || !url.isScheme('file')) {
+                                    if (url == null) {
                                       return;
                                     }
-                                    final loadedPath = path.normalize(
-                                      url.uriValue.toFilePath(),
-                                    );
-                                    final currentChapterPath = path.normalize(
-                                      currentChapter.filePath,
-                                    );
-                                    if (loadedPath != currentChapterPath) {
-                                      readerLog(
-                                        'drop stale webview loadStop loaded=$loadedPath current=$currentChapterPath',
+                                    if (url.isScheme('file')) {
+                                      final loadedPath = path.normalize(
+                                        url.uriValue.toFilePath(),
                                       );
-                                      return;
-                                    }
-                                    if (pendingWebLoadPath != null &&
-                                        pendingWebLoadPath != loadedPath) {
-                                      readerLog(
-                                        'drop unexpected webview loadStop loaded=$loadedPath pending=$pendingWebLoadPath',
+                                      final currentChapterPath = path.normalize(
+                                        currentChapter.filePath,
                                       );
-                                      return;
+                                      if (loadedPath != currentChapterPath &&
+                                          pendingWebLoadPath != null &&
+                                          pendingWebLoadPath != loadedPath) {
+                                        readerLog(
+                                          'drop unexpected webview loadStop loaded=$loadedPath pending=$pendingWebLoadPath',
+                                        );
+                                        return;
+                                      }
                                     }
                                     if (url.fragment.isNotEmpty == true) {
                                       pendingAnchor = decodeLooseUriComponent(
@@ -434,9 +431,11 @@ class ReaderScreenState extends State<ReaderScreen>
                                   },
                                   onReceivedError: (ctrl, request, error) {
                                     readerLog(
-                                      'webview error main=${request.isForMainFrame} ${error.description}',
+                                      'webview error main=${request.isForMainFrame} url=${request.url} ${error.description}',
                                     );
                                     if (request.isForMainFrame == true &&
+                                        request.url != null &&
+                                        request.url!.isScheme('file') &&
                                         mounted) {
                                       setState(() {
                                         isLoading = false;

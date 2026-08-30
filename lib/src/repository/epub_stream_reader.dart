@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -390,7 +390,22 @@ class EpubStreamReader {
           path.posix.dirname(chapterHref),
           href,
         );
-        return 'sq-epub://$epubPath?entry=${Uri.encodeComponent(resolved)}';
+        final imgFile = findArchiveFile(archive, resolved);
+        if (imgFile != null) {
+          final bytes = imgFile.content as List<int>;
+          final ext = path.extension(resolved).toLowerCase();
+          final mime = ext == '.png'
+              ? 'image/png'
+              : (ext == '.webp'
+                  ? 'image/webp'
+                  : (ext == '.gif'
+                      ? 'image/gif'
+                      : (ext == '.svg'
+                          ? 'image/svg+xml'
+                          : 'image/jpeg')));
+          return 'data:$mime;base64,${base64Encode(bytes)}';
+        }
+        return href;
       },
       extraCssSources: cssSources,
     );
