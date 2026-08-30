@@ -289,11 +289,16 @@ class BookRepository {
     );
   }
 
-  Future<List<BookEntry>> pickAndImportBooks() async {
+  Future<List<BookEntry>> pickAndImportBooks({
+    void Function(int current, int total, BookEntry? book, String fileName)? onProgress,
+  }) async {
     if (Platform.isAndroid) {
       final nativePaths = await _pickAndroidBookFiles();
       if (nativePaths != null && nativePaths.isNotEmpty) {
-        return _importBookFiles(nativePaths.map((filePath) => File(filePath)));
+        return _importBookFiles(
+          nativePaths.map((filePath) => File(filePath)),
+          onProgress: onProgress,
+        );
       }
     }
     final result = await FilePicker.pickFiles(
@@ -306,7 +311,10 @@ class BookRepository {
     if (paths == null) {
       return const [];
     }
-    return _importBookFiles(paths.map((filePath) => File(filePath)));
+    return _importBookFiles(
+      paths.map((filePath) => File(filePath)),
+      onProgress: onProgress,
+    );
   }
 
   Future<List<String>?> _pickAndroidBookFiles() async {
@@ -320,25 +328,30 @@ class BookRepository {
     }
   }
 
-  Future<List<BookEntry>> pickAndImportBookDirectory() async {
+  Future<List<BookEntry>> pickAndImportBookDirectory({
+    void Function(int current, int total, BookEntry? book, String fileName)? onProgress,
+  }) async {
     if (Platform.isAndroid) {
       final nativePaths = await _pickAndroidBookDirectory();
       if (nativePaths != null) {
-        return _importBookFiles(nativePaths.map((filePath) => File(filePath)));
+        return _importBookFiles(
+          nativePaths.map((filePath) => File(filePath)),
+          onProgress: onProgress,
+        );
       }
     }
     String? selected;
     try {
       selected = await FilePicker.getDirectoryPath();
     } catch (_) {
-      return pickAndImportBooks();
+      return pickAndImportBooks(onProgress: onProgress);
     }
     if (selected == null || selected.isEmpty) {
-      return pickAndImportBooks();
+      return pickAndImportBooks(onProgress: onProgress);
     }
     final dir = Directory(selected);
     if (!await dir.exists()) {
-      return pickAndImportBooks();
+      return pickAndImportBooks(onProgress: onProgress);
     }
     final files = <File>[];
     try {
@@ -352,13 +365,13 @@ class BookRepository {
         files.add(entity);
       }
     } on FileSystemException {
-      return pickAndImportBooks();
+      return pickAndImportBooks(onProgress: onProgress);
     }
     files.sort((a, b) => a.path.toLowerCase().compareTo(b.path.toLowerCase()));
     if (files.isEmpty) {
-      return pickAndImportBooks();
+      return pickAndImportBooks(onProgress: onProgress);
     }
-    return _importBookFiles(files);
+    return _importBookFiles(files, onProgress: onProgress);
   }
 
   Future<List<String>?> _pickAndroidBookDirectory() async {
@@ -410,19 +423,28 @@ class BookRepository {
     );
   }
 
-  Future<List<BookEntry>> _importBookFiles(Iterable<File> files) async {
+  Future<List<BookEntry>> _importBookFiles(
+    Iterable<File> files, {
+    void Function(int current, int total, BookEntry? book, String fileName)? onProgress,
+  }) async {
+    final validFiles = files.where((f) => _isImportableBookPath(f.path)).toList();
+    final total = validFiles.length;
     final imported = <BookEntry>[];
-    for (final file in files) {
-      if (!_isImportableBookPath(file.path) || !await file.exists()) {
+    var current = 0;
+    for (final file in validFiles) {
+      current++;
+      final fileName = path.basename(file.path);
+      onProgress?.call(current, total, null, fileName);
+      if (!await file.exists()) {
         continue;
       }
       try {
         final extension = path.extension(file.path).toLowerCase();
-        imported.add(
-          extension == '.epub'
-              ? await _importEpub(file)
-              : await _importTxt(file),
-        );
+        final book = extension == '.epub'
+            ? await _importEpub(file)
+            : await _importTxt(file);
+        imported.add(book);
+        onProgress?.call(current, total, book, fileName);
       } catch (_) {
         // Keep batch import useful even if one file is malformed.
       }

@@ -1,4 +1,4 @@
-﻿package com.squartor.reader
+package com.squartor.reader
 
 import android.app.Activity
 import android.content.ContentValues
@@ -89,24 +89,28 @@ class MainActivity : FlutterActivity() {
                         dir
                     }
                     for (uri in uris) {
-                        val realPath = resolveRealPathFromUri(uri)
-                        if (realPath != null && File(realPath).exists() && File(realPath).length() > 0L) {
-                            picked.add(realPath)
-                        } else {
-                            val displayName = displayNameForUri(uri) ?: "book"
-                            if (isImportableBookName(displayName) || isImportableBookUri(uri)) {
-                                val target = uniqueTargetFile(targetRoot, displayNameForImport(uri, displayName))
-                                contentResolver.openInputStream(uri)?.use { input ->
-                                    target.outputStream().use { output ->
-                                        input.copyTo(output)
+                        try {
+                            val realPath = resolveRealPathFromUri(uri)
+                            if (realPath != null && File(realPath).exists() && File(realPath).length() > 0L) {
+                                picked.add(realPath)
+                            } else {
+                                val displayName = displayNameForUri(uri) ?: "book"
+                                if (isImportableBookName(displayName) || isImportableBookUri(uri)) {
+                                    val target = uniqueTargetFile(targetRoot, displayNameForImport(uri, displayName))
+                                    contentResolver.openInputStream(uri)?.use { input ->
+                                        target.outputStream().use { output ->
+                                            input.copyTo(output)
+                                        }
+                                    }
+                                    if (target.exists() && target.length() > 0L) {
+                                        picked.add(target.absolutePath)
+                                    } else {
+                                        target.delete()
                                     }
                                 }
-                                if (target.exists() && target.length() > 0L) {
-                                    picked.add(target.absolutePath)
-                                } else {
-                                    target.delete()
-                                }
                             }
+                        } catch (_: Throwable) {
+                            // Individual file error should not abort the whole batch
                         }
                     }
                     runOnUiThread { result.success(picked) }
@@ -272,21 +276,32 @@ class MainActivity : FlutterActivity() {
 
     private fun resolveRealPathFromUri(uri: Uri): String? {
         if (uri.scheme == "file") {
-            return uri.path
+            val path = uri.path
+            if (path != null && File(path).exists() && File(path).canRead()) {
+                return path
+            }
         }
         if (uri.scheme == "content") {
             val authority = uri.authority
-            if (authority == "com.android.externalstorage.documents") {
-                val docId = try {
-                    if (DocumentsContract.isDocumentUri(this, uri)) {
-                        DocumentsContract.getDocumentId(uri)
-                    } else {
-                        uri.path?.substringAfter("/document/", "")?.ifEmpty { uri.path?.substringAfter("/tree/", "") }
-                    }
-                } catch (_: Throwable) {
+            val docId = try {
+                if (DocumentsContract.isDocumentUri(this, uri)) {
+                    DocumentsContract.getDocumentId(uri)
+                } else {
                     uri.path?.substringAfter("/document/", "")?.ifEmpty { uri.path?.substringAfter("/tree/", "") }
                 }
-                if (docId != null) {
+            } catch (_: Throwable) {
+                uri.path?.substringAfter("/document/", "")?.ifEmpty { uri.path?.substringAfter("/tree/", "") }
+            }
+
+            if (docId != null) {
+                if (docId.startsWith("raw:")) {
+                    val rawPath = docId.removePrefix("raw:")
+                    val file = File(rawPath)
+                    if (file.exists() && file.canRead()) {
+                        return file.absolutePath
+                    }
+                }
+                if (authority == "com.android.externalstorage.documents") {
                     val split = docId.split(":")
                     val type = split[0]
                     val relPath = if (split.size > 1) split[1] else ""
@@ -301,21 +316,37 @@ class MainActivity : FlutterActivity() {
                     }
                 }
             }
-            var cursor: Cursor? = null
+
+            // Check MediaStore query
             try {
-                cursor = contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.DATA), null, null, null)
-                if (cursor != null && cursor.moveToFirst()) {
-                    val index = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
-                    if (index >= 0) {
-                        val path = cursor.getString(index)
-                        if (path != null && File(path).exists() && File(path).canRead()) {
-                            return path
+                contentResolver.query(uri, arrayOf(MediaStore.MediaColumns.DATA), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val index = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                        if (index >= 0) {
+                            val path = cursor.getString(index)
+                            if (path != null && File(path).exists() && File(path).canRead()) {
+                                return path
+                            }
                         }
                     }
                 }
-            } catch (_: Throwable) {
-            } finally {
-                cursor?.close()
+            } catch (_: Throwable) {}
+
+            // Check candidate external directories with displayName
+            val displayName = displayNameForUri(uri)
+            if (displayName != null && displayName.isNotBlank()) {
+                val candidateDirs = listOf(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
+                    Environment.getExternalStorageDirectory(),
+                    File(Environment.getExternalStorageDirectory(), "Books")
+                )
+                for (dir in candidateDirs) {
+                    val candidate = File(dir, displayName)
+                    if (candidate.exists() && candidate.canRead() && candidate.length() > 0L) {
+                        return candidate.absolutePath
+                    }
+                }
             }
         }
         return null

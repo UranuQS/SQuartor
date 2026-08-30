@@ -219,13 +219,24 @@ class AppState extends ChangeNotifier {
   Future<void> importBooks() async {
     _beginImportActivity(title: '正在批量导入', detail: '正在读取所选文件...');
     try {
-      final books = await _repository.pickAndImportBooks();
-      if (books.isEmpty) {
+      var totalImportedCount = 0;
+      final books = await _repository.pickAndImportBooks(
+        onProgress: (current, total, book, fileName) {
+          _beginImportActivity(
+            title: '正在导入 ($current/$total)',
+            detail: fileName,
+          );
+          if (book != null) {
+            final count = _storeImportedBooks([book]);
+            totalImportedCount += count;
+          }
+        },
+      );
+      if (books.isEmpty && totalImportedCount == 0) {
         _clearImportActivity();
         return;
       }
-      final imported = _storeImportedBooks(books);
-      _finishImportActivity(imported == 0 ? '所选书籍已存在' : '已导入 $imported 本书');
+      _finishImportActivity(totalImportedCount == 0 ? '所选书籍已存在' : '已导入 $totalImportedCount 本书');
     } catch (error) {
       _finishImportActivity('导入失败', failed: true);
       _error = '批量导入失败：$error';
@@ -236,13 +247,24 @@ class AppState extends ChangeNotifier {
   Future<void> importBookDirectory() async {
     _beginImportActivity(title: '正在导入文件夹', detail: '正在扫描书籍文件...');
     try {
-      final books = await _repository.pickAndImportBookDirectory();
-      if (books.isEmpty) {
+      var totalImportedCount = 0;
+      final books = await _repository.pickAndImportBookDirectory(
+        onProgress: (current, total, book, fileName) {
+          _beginImportActivity(
+            title: '正在导入 ($current/$total)',
+            detail: fileName,
+          );
+          if (book != null) {
+            final count = _storeImportedBooks([book]);
+            totalImportedCount += count;
+          }
+        },
+      );
+      if (books.isEmpty && totalImportedCount == 0) {
         _clearImportActivity();
         return;
       }
-      final imported = _storeImportedBooks(books);
-      _finishImportActivity(imported == 0 ? '文件夹内书籍已存在' : '已导入 $imported 本书');
+      _finishImportActivity(totalImportedCount == 0 ? '文件夹内书籍已存在' : '已导入 $totalImportedCount 本书');
     } catch (error) {
       _finishImportActivity('导入失败', failed: true);
       _error = '导入文件夹失败：$error';
