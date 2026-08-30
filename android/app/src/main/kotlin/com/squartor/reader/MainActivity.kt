@@ -11,6 +11,7 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -172,6 +173,7 @@ class MainActivity : FlutterActivity() {
             result.error("PICKER_BUSY", "A file picker is already open.", null)
             return
         }
+        checkAndRequestStoragePermission()
         pendingFilesResult = result
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -194,6 +196,7 @@ class MainActivity : FlutterActivity() {
             result.error("PICKER_BUSY", "A directory picker is already open.", null)
             return
         }
+        checkAndRequestStoragePermission()
         pendingDirectoryResult = result
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -352,20 +355,47 @@ class MainActivity : FlutterActivity() {
         return null
     }
 
+    private fun checkAndRequestStoragePermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                } catch (_: Throwable) {
+                    try {
+                        val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                        startActivity(intent)
+                    } catch (_: Throwable) {}
+                }
+            }
+        }
+    }
+
     private fun resolveRealDirectoryFromTreeUri(treeUri: Uri): File? {
         try {
             val docId = DocumentsContract.getTreeDocumentId(treeUri)
             val split = docId.split(":")
             val type = split[0]
             val relPath = if (split.size > 1) split[1] else ""
-            val fullPath = if ("primary".equals(type, ignoreCase = true)) {
-                "${Environment.getExternalStorageDirectory()}/$relPath"
+            val candidates = mutableListOf<File>()
+            if ("primary".equals(type, ignoreCase = true)) {
+                candidates.add(File(Environment.getExternalStorageDirectory(), relPath))
             } else {
-                "/storage/$type/$relPath"
+                candidates.add(File("/storage/$type/$relPath"))
             }
-            val dir = File(fullPath)
-            if (dir.exists() && dir.isDirectory && dir.canRead()) {
-                return dir
+            if (relPath.isNotBlank()) {
+                candidates.add(File(Environment.getExternalStorageDirectory(), relPath))
+                candidates.add(File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), relPath))
+                candidates.add(File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), relPath))
+                candidates.add(File(Environment.getExternalStorageDirectory(), "Download/$relPath"))
+                candidates.add(File(Environment.getExternalStorageDirectory(), "Books/$relPath"))
+            }
+            for (dir in candidates) {
+                if (dir.exists() && dir.isDirectory && dir.canRead()) {
+                    return dir
+                }
             }
         } catch (_: Throwable) {
         }
