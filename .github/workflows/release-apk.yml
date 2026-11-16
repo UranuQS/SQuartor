@@ -45,11 +45,21 @@ jobs:
       - name: Prepare CI Gradle properties
         run: |
           sed -i '/proxy/Id' android/gradle.properties
-          sed -i 's/-Xmx1280m/-Xmx3072m/' android/gradle.properties
+          sed -i 's/^org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:ReservedCodeCacheSize=256m/' android/gradle.properties
+          sed -i 's/^org.gradle.workers.max=.*/org.gradle.workers.max=4/' android/gradle.properties
+          cat android/gradle.properties
 
-      - name: Run unit tests & build Release APK
+      - name: Run unit tests
         working-directory: android
-        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease --console=plain
+        env:
+          GRADLE_OPTS: "-Xmx4096m -XX:MaxMetaspaceSize=1024m"
+        run: gradle --no-daemon :app:testDebugUnitTest --console=plain
+
+      - name: Build Release APK
+        working-directory: android
+        env:
+          GRADLE_OPTS: "-Xmx4096m -XX:MaxMetaspaceSize=1024m"
+        run: gradle --no-daemon :app:assembleRelease --console=plain
 
       - name: Verify built APK
         run: ls -lh build/app/outputs/apk/release/app-release.apk
