@@ -18,19 +18,24 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install Android 37.0 Platform & Build-Tools
         run: |
           set +o pipefail
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "ANDROID_HOME=${SDK_ROOT}" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=${SDK_ROOT}" >> "$GITHUB_ENV"
+          SDKMGR="$(command -v sdkmanager || ls -1 "${SDK_ROOT}"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -n 1 || true)"
+          if [ -z "${SDKMGR}" ]; then
+            echo "sdkmanager not found under ${SDK_ROOT}" >&2
+            exit 1
+          fi
+          yes | "${SDKMGR}" --sdk_root="${SDK_ROOT}" --licenses >/dev/null || true
+          "${SDKMGR}" --sdk_root="${SDK_ROOT}" "platforms;android-37.0" "build-tools;37.0.0"
 
       - name: Set up Gradle 9.3.1
         uses: gradle/actions/setup-gradle@v4
